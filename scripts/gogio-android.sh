@@ -11,6 +11,8 @@ min_sdk="$2"
 target_sdk="$3"
 app_id="$4"
 go_pkg="$5"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
 
 if ! command -v "$gogio_bin" >/dev/null 2>&1; then
 	echo "gogio binary not found: $gogio_bin" >&2
@@ -129,10 +131,15 @@ cp "$workdir/apk/classes.dex" "$repack_dir/classes.dex"
 output_apk="wetterabhaengig.apk"
 "$zipalign_bin" -f 4 "$workdir/app.zip" "$output_apk"
 
-if [ ! -f "$workdir/sign.keystore" ]; then
-	keytool -genkey -keystore "$workdir/sign.keystore" -storepass android -alias android -keyalg RSA -keysize 2048 -validity 10000 -noprompt -dname CN=android
+keystore_path="${WETTER_KEYSTORE_PATH:-$repo_root/.keys/android-debug.keystore}"
+keystore_alias="${WETTER_KEY_ALIAS:-android}"
+keystore_pass="${WETTER_KEY_PASS:-android}"
+
+mkdir -p "$(dirname "$keystore_path")"
+if [ ! -f "$keystore_path" ]; then
+	keytool -genkey -keystore "$keystore_path" -storepass "$keystore_pass" -alias "$keystore_alias" -keyalg RSA -keysize 2048 -validity 10000 -noprompt -dname CN=wetterabhaengig
 fi
 
-"$apksigner_bin" sign --ks-pass pass:android --ks "$workdir/sign.keystore" "$output_apk"
+"$apksigner_bin" sign --ks-pass "pass:$keystore_pass" --ks "$keystore_path" --ks-key-alias "$keystore_alias" "$output_apk"
 
 echo "Patched APK built at: $(pwd)/$output_apk"

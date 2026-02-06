@@ -1,2 +1,3 @@
 build/
 weather_check.py
+.keys/
