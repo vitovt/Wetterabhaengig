@@ -7,17 +7,28 @@ This file captures only the requirements that have been agreed so far.
 - Application ID: com.vitovt.wetterabhaengig.
 
 ## Goal
-- Android app to track weather-related changes and show warnings.
+- Cross-platform app to track weather-related changes and show warnings.
+- Purpose: provide a quick, understandable risk signal for the selected location, plus the numeric context behind it.
 - Primary output: a traffic light indicator (red/yellow/green) plus numeric details.
 - All available numeric values should be shown under the traffic light.
 
 ## Tech Stack & Platform
 - Language: Go.
 - UI framework: Gio (gioui.org).
+- Supported platforms: Linux, Android, Windows, macOS.
 - Android minimum version: 11 (API 30).
 - Target SDK must be Android 14 or newer.
 - Code comments must be in English.
 - README must be in English.
+
+## Build & Tooling
+- Create a `Makefile` that handles preparation, dependencies, and builds.
+- Required targets:
+  - `make help` (default behavior) to show available commands.
+  - `make linux`
+  - `make android`
+  - `make windows`
+  - `make mac`
 
 ## Data Sources (from the Python prototype)
 - Open-Meteo API: hourly surface pressure, forecast_days=2, timezone=auto.
@@ -56,6 +67,9 @@ This file captures only the requirements that have been agreed so far.
   - Minimum: 15 minutes (lower is not allowed).
 - Local notifications when the traffic light state changes (any direction).
 - Notifications can be enabled/disabled (default: enabled).
+- Settings page must include a `Test notification` button.
+- Test page must include a `Test notification` action.
+- `Test notification` must immediately show a local notification using current notification data.
 
 ## History & Storage
 - Store a record for every check (based on the configured schedule).
@@ -84,6 +98,11 @@ This file captures only the requirements that have been agreed so far.
 - App should automatically include other languages when translation files exist.
 - Translation format: TOML.
 
+## Layout & Responsiveness
+- Use one consistent layout concept across all platforms.
+- Layout should adapt to screen size and window size while keeping visual consistency.
+- In vertical orientation or narrow resized windows, switch to a compact layout variant.
+
 ## Traffic Light Mapping
 - LOW => Green.
 - MEDIUM => Yellow.
@@ -93,8 +112,9 @@ This file captures only the requirements that have been agreed so far.
 - Also show which criterion is out of range.
 
 ## Repository Rules
-- Initialize Git in this folder.
-- Small commits only: one logical change, one file per commit when possible.
+- Use Git during the full development process.
+- Commit in small logical blocks for every change.
+- One file per commit when possible.
 - The existing file `weather_check.py` should not be committed.
 
 ## Open Questions / TBD
