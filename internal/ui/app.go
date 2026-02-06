@@ -76,15 +76,17 @@ type UI struct {
 	setTime24Btn   widget.Clickable
 	setTime12Btn   widget.Clickable
 
-	latEditor      widget.Editor
-	lonEditor      widget.Editor
-	cities         []location.City
-	cityButtons    []widget.Clickable
-	cityList       layout.List
-	selectedCity   int
-	locationLat    float64
-	locationLon    float64
-	applyCoordsBtn widget.Clickable
+	latEditor        widget.Editor
+	lonEditor        widget.Editor
+	cities           []location.City
+	cityButtons      []widget.Clickable
+	cityList         layout.List
+	cityToggleBtn    widget.Clickable
+	cityDropdownOpen bool
+	selectedCity     int
+	locationLat      float64
+	locationLon      float64
+	applyCoordsBtn   widget.Clickable
 
 	history      []service.Result
 	historyList  layout.List
@@ -238,6 +240,9 @@ func (u *UI) handleActions(gtx layout.Context) {
 		for u.cityButtons[idx].Clicked(gtx) {
 			u.selectCity(idx)
 		}
+	}
+	for u.cityToggleBtn.Clicked(gtx) {
+		u.cityDropdownOpen = !u.cityDropdownOpen
 	}
 	for u.applySettingsBtn.Clicked(gtx) {
 		if err := u.applySettingsFromEditors(); err != nil {
@@ -869,15 +874,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					txt := material.Body2(
-						u.theme,
-						fmt.Sprintf("Selected city: %s", u.currentCityName()),
-					)
-					return txt.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return u.layoutCitySelector(gtx)
+					return u.layoutCityDropdown(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -993,25 +990,45 @@ func (u *UI) currentNotificationText() string {
 	)
 }
 
-func (u *UI) layoutCitySelector(gtx layout.Context) layout.Dimensions {
-	maxHeight := gtx.Dp(unit.Dp(200))
-	gtx.Constraints.Max.Y = maxHeight
-	return u.cityList.Layout(gtx, len(u.cityButtons), func(gtx layout.Context, index int) layout.Dimensions {
-		enabledLabel := u.cities[index].Name
-		if index == u.selectedCity {
-			enabledLabel = "• " + enabledLabel
-		}
-		return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.cityButtons[index], enabledLabel)
+func (u *UI) layoutCityDropdown(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			label := fmt.Sprintf("City: %s", u.currentCityName())
+			if u.cityDropdownOpen {
+				label = "City: " + u.currentCityName() + " ▲"
+			} else {
+				label = "City: " + u.currentCityName() + " ▼"
+			}
+			btn := material.Button(u.theme, &u.cityToggleBtn, label)
 			return btn.Layout(gtx)
-		})
-	})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !u.cityDropdownOpen {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				maxHeight := gtx.Dp(unit.Dp(190))
+				gtx.Constraints.Max.Y = maxHeight
+				return u.cityList.Layout(gtx, len(u.cityButtons), func(gtx layout.Context, index int) layout.Dimensions {
+					enabledLabel := u.cities[index].Name
+					if index == u.selectedCity {
+						enabledLabel = "• " + enabledLabel
+					}
+					return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						btn := material.Button(u.theme, &u.cityButtons[index], enabledLabel)
+						return btn.Layout(gtx)
+					})
+				})
+			})
+		}),
+	)
 }
 
 func (u *UI) selectCity(index int) {
 	if index < 0 || index >= len(u.cities) {
 		return
 	}
+	u.cityDropdownOpen = false
 	u.selectedCity = index
 	u.locationLat = u.cities[index].Lat
 	u.locationLon = u.cities[index].Lon
