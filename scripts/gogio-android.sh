@@ -92,7 +92,8 @@ cp "$workdir/apk/classes.dex" "$repack_dir/classes.dex"
 
 (
 	cd "$repack_dir"
-	zip -qr "$workdir/app.zip" .
+	rm -f "$workdir/app.zip"
+	zip -q0r "$workdir/app.zip" .
 )
 
 output_apk="wetterabhaengig.apk"
