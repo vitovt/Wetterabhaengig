@@ -14,6 +14,7 @@ The app provides a quick traffic-light risk signal for a selected location and s
 - Default risk rules for pressure delta and planetary K-index.
 - Coordinate editing plus editable EU city list selection.
 - Persistent local app state for settings, location, latest metrics, and history.
+- History screen with initial dual-axis chart rendering for pressure delta and K-index.
 - Test-notification actions on Settings and Test screens.
 - Auto-generated placeholder icons, including Android `appicon.png`.
 

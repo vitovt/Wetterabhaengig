@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"gioui.org/app"
+	"gioui.org/f32"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -477,6 +478,8 @@ func (u *UI) layoutHistory(gtx layout.Context) layout.Dimensions {
 			return text.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		layout.Rigid(u.layoutHistoryChart),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			if len(u.history) == 0 {
 				return material.Body1(u.theme, "No history yet. Run Check now.").Layout(gtx)
@@ -496,6 +499,106 @@ func (u *UI) layoutHistory(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 	)
+}
+
+func (u *UI) layoutHistoryChart(gtx layout.Context) layout.Dimensions {
+	width := gtx.Constraints.Max.X
+	height := gtx.Dp(unit.Dp(220))
+	if width <= 0 {
+		width = gtx.Dp(unit.Dp(300))
+	}
+	if len(u.history) < 2 {
+		box := image.Rect(0, 0, width, height)
+		paint.FillShape(gtx.Ops, color.NRGBA{A: 255, R: 238, G: 242, B: 245}, clip.Rect(box).Op())
+		return layout.Dimensions{Size: image.Pt(width, height)}
+	}
+
+	padding := 28.0
+	chartW := float32(width) - float32(padding*2)
+	chartH := float32(height) - float32(padding*2)
+	if chartW <= 1 || chartH <= 1 {
+		return layout.Dimensions{Size: image.Pt(width, height)}
+	}
+
+	// Chart background.
+	box := image.Rect(0, 0, width, height)
+	paint.FillShape(gtx.Ops, color.NRGBA{A: 255, R: 246, G: 249, B: 252}, clip.Rect(box).Op())
+
+	minPressure := u.history[0].PressureDeltaHPa
+	maxPressure := u.history[0].PressureDeltaHPa
+	minK := u.history[0].KIndex
+	maxK := u.history[0].KIndex
+	for i := range u.history {
+		if u.history[i].PressureDeltaHPa < minPressure {
+			minPressure = u.history[i].PressureDeltaHPa
+		}
+		if u.history[i].PressureDeltaHPa > maxPressure {
+			maxPressure = u.history[i].PressureDeltaHPa
+		}
+		if u.history[i].KIndex < minK {
+			minK = u.history[i].KIndex
+		}
+		if u.history[i].KIndex > maxK {
+			maxK = u.history[i].KIndex
+		}
+	}
+	if maxPressure-minPressure < 0.1 {
+		maxPressure += 0.05
+		minPressure -= 0.05
+	}
+	if maxK-minK < 0.1 {
+		maxK += 0.05
+		minK -= 0.05
+	}
+
+	toX := func(i int, n int) float32 {
+		step := chartW / float32(n-1)
+		return float32(padding) + float32(i)*step
+	}
+	toYPressure := func(v float64) float32 {
+		k := (v - minPressure) / (maxPressure - minPressure)
+		return float32(padding) + chartH - float32(k)*chartH
+	}
+	toYK := func(v float64) float32 {
+		k := (v - minK) / (maxK - minK)
+		return float32(padding) + chartH - float32(k)*chartH
+	}
+
+	// Axes.
+	axisColor := color.NRGBA{A: 255, R: 140, G: 148, B: 160}
+	drawLine(gtx, float32(padding), float32(padding), float32(padding), float32(padding)+chartH, 1.5, axisColor)
+	drawLine(gtx, float32(width)-float32(padding), float32(padding), float32(width)-float32(padding), float32(padding)+chartH, 1.5, axisColor)
+	drawLine(gtx, float32(padding), float32(padding)+chartH, float32(padding)+chartW, float32(padding)+chartH, 1.5, axisColor)
+
+	// Pressure line (left Y axis).
+	for i := 1; i < len(u.history); i++ {
+		x1 := toX(i-1, len(u.history))
+		y1 := toYPressure(u.history[i-1].PressureDeltaHPa)
+		x2 := toX(i, len(u.history))
+		y2 := toYPressure(u.history[i].PressureDeltaHPa)
+		level := domain.RiskFromPressureDelta(u.history[i].PressureDeltaHPa, u.cfg.Pressure)
+		drawLine(gtx, x1, y1, x2, y2, 2.4, riskColor(level))
+	}
+
+	// K-index line (right Y axis).
+	for i := 1; i < len(u.history); i++ {
+		x1 := toX(i-1, len(u.history))
+		y1 := toYK(u.history[i-1].KIndex)
+		x2 := toX(i, len(u.history))
+		y2 := toYK(u.history[i].KIndex)
+		level := domain.RiskFromKIndex(u.history[i].KIndex, u.cfg.KIndex)
+		drawLine(gtx, x1, y1, x2, y2, 2.0, riskColor(level))
+	}
+
+	return layout.Dimensions{Size: image.Pt(width, height)}
+}
+
+func drawLine(gtx layout.Context, x1, y1, x2, y2, width float32, col color.NRGBA) {
+	var p clip.Path
+	p.Begin(gtx.Ops)
+	p.MoveTo(f32.Pt(x1, y1))
+	p.LineTo(f32.Pt(x2, y2))
+	paint.FillShape(gtx.Ops, col, clip.Stroke{Path: p.End(), Width: width}.Op())
 }
 
 func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
@@ -618,19 +721,34 @@ func (u *UI) layoutTrafficLight(gtx layout.Context) layout.Dimensions {
 	return layout.Dimensions{Size: dims}
 }
 
+func riskColor(level domain.RiskLevel) color.NRGBA {
+	switch level {
+	case domain.RiskLow:
+		return color.NRGBA{A: 255, R: 45, G: 165, B: 70}
+	case domain.RiskMedium:
+		return color.NRGBA{A: 255, R: 230, G: 175, B: 25}
+	case domain.RiskHigh:
+		return color.NRGBA{A: 255, R: 208, G: 52, B: 42}
+	case domain.RiskCritical:
+		return color.NRGBA{A: 255, R: 165, G: 20, B: 20}
+	default:
+		return color.NRGBA{A: 255, R: 120, G: 120, B: 120}
+	}
+}
+
 func (u *UI) trafficLightColor() color.NRGBA {
 	switch u.overallRisk {
 	case domain.RiskLow:
-		return color.NRGBA{A: 255, R: 34, G: 139, B: 34}
+		return riskColor(domain.RiskLow)
 	case domain.RiskMedium:
-		return color.NRGBA{A: 255, R: 255, G: 199, B: 0}
+		return riskColor(domain.RiskMedium)
 	case domain.RiskHigh:
-		return color.NRGBA{A: 255, R: 200, G: 25, B: 25}
+		return riskColor(domain.RiskHigh)
 	case domain.RiskCritical:
 		if time.Now().Unix()%2 == 0 {
-			return color.NRGBA{A: 255, R: 235, G: 0, B: 0}
+			return color.NRGBA{A: 255, R: 245, G: 25, B: 25}
 		}
-		return color.NRGBA{A: 255, R: 110, G: 0, B: 0}
+		return riskColor(domain.RiskCritical)
 	default:
 		return color.NRGBA{A: 255, R: 120, G: 120, B: 120}
 	}
