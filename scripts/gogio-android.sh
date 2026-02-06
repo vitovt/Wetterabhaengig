@@ -58,6 +58,35 @@ if [ ! -f "$manifest" ]; then
 	exit 1
 fi
 
+notif_icon_dir="$workdir/res/drawable"
+notif_icon_file="$notif_icon_dir/ic_stat_wetterabhaengig.xml"
+mkdir -p "$notif_icon_dir"
+cat >"$notif_icon_file" <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+	android:width="24dp"
+	android:height="24dp"
+	android:viewportWidth="24"
+	android:viewportHeight="24">
+	<path
+		android:fillColor="#00000000"
+		android:strokeColor="#FFFFFFFF"
+		android:strokeLineJoin="round"
+		android:strokeLineCap="round"
+		android:strokeWidth="1.6"
+		android:pathData="M8,2.5h8c1.1,0 2,0.9 2,2v15c0,1.1 -0.9,2 -2,2H8c-1.1,0 -2,-0.9 -2,-2v-15c0,-1.1 0.9,-2 2,-2z"/>
+	<path
+		android:fillColor="#FFFFFFFF"
+		android:pathData="M12,7m-1.6,0a1.6,1.6 0,1 0,3.2 0a1.6,1.6 0,1 0,-3.2 0"/>
+	<path
+		android:fillColor="#FFFFFFFF"
+		android:pathData="M12,12m-1.6,0a1.6,1.6 0,1 0,3.2 0a1.6,1.6 0,1 0,-3.2 0"/>
+	<path
+		android:fillColor="#FFFFFFFF"
+		android:pathData="M12,17m-1.6,0a1.6,1.6 0,1 0,3.2 0a1.6,1.6 0,1 0,-3.2 0"/>
+</vector>
+EOF
+
 if ! grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"; then
 	tmp_manifest="$(mktemp /tmp/AndroidManifest-XXXX.xml)"
 	awk '
@@ -75,6 +104,7 @@ if ! grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"; then
 	mv "$tmp_manifest" "$manifest"
 fi
 
+"$aapt2_bin" compile -o "$workdir/resources.zip" --dir "$workdir/res"
 "$aapt2_bin" link --manifest "$manifest" -I "$android_jar" -o "$workdir/link.apk" "$workdir/resources.zip"
 
 repack_dir="$workdir/repack"

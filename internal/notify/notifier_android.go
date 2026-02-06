@@ -39,6 +39,9 @@ static jint jni_GetStaticIntField(JNIEnv *env, jclass clazz, jfieldID fieldID) {
 static jint jni_CallIntMethodStr(JNIEnv *env, jobject obj, jmethodID methodID, jstring str) {
 	return (*env)->CallIntMethod(env, obj, methodID, str);
 }
+static jint jni_CallIntMethod3Str(JNIEnv *env, jobject obj, jmethodID methodID, jstring a, jstring b, jstring c) {
+	return (*env)->CallIntMethod(env, obj, methodID, a, b, c);
+}
 static jobject jni_CallObjectMethodStr(JNIEnv *env, jobject obj, jmethodID methodID, jstring str) {
 	return (*env)->CallObjectMethod(env, obj, methodID, str);
 }
@@ -118,6 +121,7 @@ const (
 	minNotificationPermissionAPI   = 33
 	minNotificationChannelAPI      = 26
 	defaultNotificationAndroidIcon = 17301659
+	notificationSmallIconName      = "ic_stat_wetterabhaengig"
 )
 
 type androidNotifier struct {
@@ -448,6 +452,16 @@ func ensureNotificationChannel(env *C.JNIEnv, manager C.jobject) error {
 }
 
 func resolveSmallIcon(env *C.JNIEnv, appCtx C.jobject) (int, error) {
+	iconID, err := resolveResourceIdentifier(env, appCtx, notificationSmallIconName, "drawable")
+	if err == nil && iconID != 0 {
+		return iconID, nil
+	}
+	if err == nil {
+		if launcherID, lookupErr := resolveResourceIdentifier(env, appCtx, "ic_launcher", "mipmap"); lookupErr == nil && launcherID != 0 {
+			return launcherID, nil
+		}
+	}
+
 	ctxClass := C.jni_GetObjectClass(env, appCtx)
 	var zeroClass C.jclass
 	var zeroObj C.jobject
@@ -488,6 +502,71 @@ func resolveSmallIcon(env *C.JNIEnv, appCtx C.jobject) (int, error) {
 	}
 
 	return defaultNotificationAndroidIcon, nil
+}
+
+func resolveResourceIdentifier(env *C.JNIEnv, appCtx C.jobject, resourceName, resourceType string) (int, error) {
+	ctxClass := C.jni_GetObjectClass(env, appCtx)
+	var zeroClass C.jclass
+	var zeroObj C.jobject
+	if ctxClass == zeroClass {
+		return 0, errors.New("cannot get context class for resource lookup")
+	}
+	defer C.jni_DeleteLocalRef(env, C.jobject(ctxClass))
+
+	getResourcesMethod, err := getMethodID(env, ctxClass, "getResources", "()Landroid/content/res/Resources;")
+	if err != nil {
+		return 0, err
+	}
+	getPackageNameMethod, err := getMethodID(env, ctxClass, "getPackageName", "()Ljava/lang/String;")
+	if err != nil {
+		return 0, err
+	}
+
+	resourcesObj := C.jni_CallObjectMethodNoArgs(env, appCtx, getResourcesMethod)
+	if err := jniException(env, "getResources"); err != nil {
+		return 0, err
+	}
+	if resourcesObj == zeroObj {
+		return 0, errors.New("resources object is unavailable")
+	}
+	defer C.jni_DeleteLocalRef(env, resourcesObj)
+
+	packageNameObj := C.jni_CallObjectMethodNoArgs(env, appCtx, getPackageNameMethod)
+	if err := jniException(env, "getPackageName"); err != nil {
+		return 0, err
+	}
+	if packageNameObj == zeroObj {
+		return 0, errors.New("package name is unavailable")
+	}
+	defer C.jni_DeleteLocalRef(env, packageNameObj)
+
+	resourcesClass := C.jni_GetObjectClass(env, resourcesObj)
+	if resourcesClass == zeroClass {
+		return 0, errors.New("cannot get Resources class")
+	}
+	defer C.jni_DeleteLocalRef(env, C.jobject(resourcesClass))
+
+	getIdentifierMethod, err := getMethodID(env, resourcesClass, "getIdentifier", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I")
+	if err != nil {
+		return 0, err
+	}
+
+	resName, err := newJavaString(env, resourceName)
+	if err != nil {
+		return 0, err
+	}
+	defer C.jni_DeleteLocalRef(env, C.jobject(resName))
+	resType, err := newJavaString(env, resourceType)
+	if err != nil {
+		return 0, err
+	}
+	defer C.jni_DeleteLocalRef(env, C.jobject(resType))
+
+	resID := C.jni_CallIntMethod3Str(env, resourcesObj, getIdentifierMethod, resName, resType, C.jstring(packageNameObj))
+	if err := jniException(env, "Resources.getIdentifier"); err != nil {
+		return 0, err
+	}
+	return int(resID), nil
 }
 
 func buildNotification(env *C.JNIEnv, appCtx C.jobject, sdkInt int, title, body string, smallIcon int) (C.jobject, error) {
