@@ -75,13 +75,16 @@ type UI struct {
 	setScheduleEditor       widget.Editor
 	setRetentionDaysEditor  widget.Editor
 
-	setUnitHPaBtn   widget.Clickable
-	setUnitMMHgBtn  widget.Clickable
-	setUnitInHgBtn  widget.Clickable
-	setTime24Btn    widget.Clickable
-	setTime12Btn    widget.Clickable
-	getGPSBtn       widget.Clickable
-	languageButtons []widget.Clickable
+	setUnitHPaBtn        widget.Clickable
+	setUnitMMHgBtn       widget.Clickable
+	setUnitInHgBtn       widget.Clickable
+	setTime24Btn         widget.Clickable
+	setTime12Btn         widget.Clickable
+	getGPSBtn            widget.Clickable
+	languageButtons      []widget.Clickable
+	languageToggleBtn    widget.Clickable
+	languageSearchEditor widget.Editor
+	languageDropdownOpen bool
 
 	latEditor        widget.Editor
 	lonEditor        widget.Editor
@@ -159,6 +162,7 @@ func New() *UI {
 	u.latEditor.SingleLine = true
 	u.lonEditor.SingleLine = true
 	u.citySearchEditor.SingleLine = true
+	u.languageSearchEditor.SingleLine = true
 	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
 	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
 	if u.setScheduleEditor.Text() == "" {
@@ -281,6 +285,9 @@ func (u *UI) handleActions(gtx layout.Context) {
 	}
 	for u.cityToggleBtn.Clicked(gtx) {
 		u.cityDropdownOpen = !u.cityDropdownOpen
+	}
+	for u.languageToggleBtn.Clicked(gtx) {
+		u.languageDropdownOpen = !u.languageDropdownOpen
 	}
 	for idx := range u.languageButtons {
 		if idx >= len(u.cfg.Languages) {
@@ -930,7 +937,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return u.layoutLanguageSwitcher(gtx)
+					return u.layoutLanguageDropdown(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1177,29 +1184,60 @@ func (u *UI) layoutCityDropdown(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-func (u *UI) layoutLanguageSwitcher(gtx layout.Context) layout.Dimensions {
+func (u *UI) layoutLanguageDropdown(gtx layout.Context) layout.Dimensions {
 	u.syncLanguageButtons()
 	if len(u.cfg.Languages) == 0 {
 		return material.Body2(u.theme, u.tr("settings.no_languages", "No languages found")).Layout(gtx)
 	}
+	filtered := u.filteredLanguageIndices()
 
-	children := make([]layout.FlexChild, 0, len(u.cfg.Languages)*2)
-	for idx, code := range u.cfg.Languages {
-		i := idx
-		langCode := code
-		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(
-				u.theme,
-				&u.languageButtons[i],
-				selectedLabel(u.cfg.Language == langCode, u.languageDisplayName(langCode)),
-			)
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			label := fmt.Sprintf("%s: %s", u.tr("settings.language", "Language"), u.languageDisplayName(u.cfg.Language))
+			if u.languageDropdownOpen {
+				label += " ▲"
+			} else {
+				label += " ▼"
+			}
+			btn := material.Button(u.theme, &u.languageToggleBtn, label)
 			return btn.Layout(gtx)
-		}))
-		if idx < len(u.cfg.Languages)-1 {
-			children = append(children, layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout))
-		}
-	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !u.languageDropdownOpen {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						ed := material.Editor(u.theme, &u.languageSearchEditor, u.tr("settings.search_language", "Search language"))
+						return ed.Layout(gtx)
+					}),
+					layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if len(filtered) == 0 {
+							return material.Body2(u.theme, u.tr("settings.no_language_match", "No matching languages")).Layout(gtx)
+						}
+						children := make([]layout.FlexChild, 0, len(filtered)*2)
+						for i, langIndex := range filtered {
+							idx := langIndex
+							children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								label := u.languageDisplayName(u.cfg.Languages[idx])
+								if u.cfg.Languages[idx] == u.cfg.Language {
+									label = "• " + label
+								}
+								btn := material.Button(u.theme, &u.languageButtons[idx], label)
+								return btn.Layout(gtx)
+							}))
+							if i < len(filtered)-1 {
+								children = append(children, layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout))
+							}
+						}
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+					}),
+				)
+			})
+		}),
+	)
 }
 
 func (u *UI) selectCity(index int) {
@@ -1232,6 +1270,8 @@ func (u *UI) selectLanguage(language string) {
 		return
 	}
 	u.cfg.Language = language
+	u.languageDropdownOpen = false
+	u.languageSearchEditor.SetText("")
 	u.saveState()
 	u.setStatus(
 		fmt.Sprintf("Language switched to: %s", u.languageDisplayName(language)),
@@ -1289,6 +1329,18 @@ func (u *UI) currentCityName() string {
 		return "custom"
 	}
 	return u.cities[u.selectedCity].Name
+}
+
+func (u *UI) filteredLanguageIndices() []int {
+	query := strings.ToLower(strings.TrimSpace(u.languageSearchEditor.Text()))
+	out := make([]int, 0, len(u.cfg.Languages))
+	for idx, code := range u.cfg.Languages {
+		label := strings.ToLower(u.languageDisplayName(code))
+		if query == "" || strings.Contains(label, query) || strings.Contains(strings.ToLower(code), query) {
+			out = append(out, idx)
+		}
+	}
+	return out
 }
 
 func (u *UI) filteredCityIndices() []int {
