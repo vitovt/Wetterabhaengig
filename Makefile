@@ -2,6 +2,10 @@ APP_NAME := wetterabhaengig
 APP_ID := com.vitovt.wetterabhaengig
 MAIN_PKG := ./cmd/wetterabhaengig
 BUILD_DIR := build
+GOGIO ?= gogio
+ANDROID_MIN_SDK := 30
+ANDROID_TARGET_SDK := 34
+ANDROID_HOME_FALLBACK := $(or $(ANDROID_HOME),$(ANDROID_SDK_ROOT),$(HOME)/Android/Sdk)
 
 .DEFAULT_GOAL := help
 
@@ -43,8 +47,15 @@ mac: prepare
 	fi
 
 android: prepare
+	@command -v $(GOGIO) >/dev/null 2>&1 || (echo "gogio not found in PATH. Add ~/go/bin to PATH or set GOGIO=<path>." && exit 1)
 	@test -f cmd/wetterabhaengig/appicon.png || (echo "Missing icon: cmd/wetterabhaengig/appicon.png" && exit 1)
-	@cd $(BUILD_DIR)/android && gogio -target android -appid $(APP_ID) ../../cmd/wetterabhaengig
+	@ANDROID_HOME="$(ANDROID_HOME_FALLBACK)"; \
+	if [ ! -d "$$ANDROID_HOME" ]; then \
+		echo "Android SDK path not found. Set ANDROID_HOME or ANDROID_SDK_ROOT."; \
+		exit 1; \
+	fi; \
+	export ANDROID_HOME; \
+	cd $(BUILD_DIR)/android && $(GOGIO) -target android -minsdk $(ANDROID_MIN_SDK) -targetsdk $(ANDROID_TARGET_SDK) -appid $(APP_ID) ../../cmd/wetterabhaengig
 
 clean:
 	rm -rf $(BUILD_DIR)
