@@ -52,10 +52,27 @@ type UI struct {
 	navSettings widget.Clickable
 	navTest     widget.Clickable
 
-	checkNowBtn     widget.Clickable
-	settingsTestBtn widget.Clickable
-	testPageTestBtn widget.Clickable
-	toggleNotifBtn  widget.Clickable
+	checkNowBtn      widget.Clickable
+	settingsTestBtn  widget.Clickable
+	testPageTestBtn  widget.Clickable
+	toggleNotifBtn   widget.Clickable
+	applySettingsBtn widget.Clickable
+
+	setPressureMediumEditor widget.Editor
+	setPressureHighEditor   widget.Editor
+	setPressureCritEditor   widget.Editor
+	setKMediumEditor        widget.Editor
+	setKHighEditor          widget.Editor
+	setKCritEditor          widget.Editor
+	setScheduleEditor       widget.Editor
+	setRetentionDaysEditor  widget.Editor
+	setLanguageEditor       widget.Editor
+
+	setUnitHPaBtn  widget.Clickable
+	setUnitMMHgBtn widget.Clickable
+	setUnitInHgBtn widget.Clickable
+	setTime24Btn   widget.Clickable
+	setTime12Btn   widget.Clickable
 
 	latEditor      widget.Editor
 	lonEditor      widget.Editor
@@ -81,6 +98,7 @@ type UI struct {
 	notificationID     int
 	hasChecked         bool
 	autoCheckPending   bool
+	nextScheduledCheck time.Time
 }
 
 func New() *UI {
@@ -122,6 +140,9 @@ func New() *UI {
 	u.lonEditor.SingleLine = true
 	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
 	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
+	if u.setScheduleEditor.Text() == "" {
+		u.initSettingsEditors()
+	}
 	u.recomputeRisk()
 	return u
 }
@@ -129,6 +150,20 @@ func New() *UI {
 func Run(window *app.Window) error {
 	u := New()
 	var ops op.Ops
+	stopInvalidate := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				window.Invalidate()
+			case <-stopInvalidate:
+				return
+			}
+		}
+	}()
+	defer close(stopInvalidate)
 
 	for {
 		switch event := window.Event().(type) {
@@ -146,7 +181,10 @@ func Run(window *app.Window) error {
 func (u *UI) handleActions(gtx layout.Context) {
 	if u.autoCheckPending {
 		u.autoCheckPending = false
-		u.runCheckNow()
+		u.runCheck(false, "startup")
+	}
+	if u.shouldRunScheduledCheck(time.Now()) {
+		u.runCheck(false, "scheduled")
 	}
 
 	for u.navHome.Clicked(gtx) {
@@ -192,12 +230,45 @@ func (u *UI) handleActions(gtx layout.Context) {
 			u.selectCity(idx)
 		}
 	}
+	for u.applySettingsBtn.Clicked(gtx) {
+		if err := u.applySettingsFromEditors(); err != nil {
+			u.setStatus(err.Error(), true)
+		} else {
+			u.setStatus("Settings applied.", false)
+		}
+	}
+	for u.setUnitHPaBtn.Clicked(gtx) {
+		u.cfg.Units.PressureUnit = "hPa"
+		u.saveState()
+	}
+	for u.setUnitMMHgBtn.Clicked(gtx) {
+		u.cfg.Units.PressureUnit = "mmHg"
+		u.saveState()
+	}
+	for u.setUnitInHgBtn.Clicked(gtx) {
+		u.cfg.Units.PressureUnit = "inHg"
+		u.saveState()
+	}
+	for u.setTime24Btn.Clicked(gtx) {
+		u.cfg.Units.TimeFormat = "24h"
+		u.saveState()
+	}
+	for u.setTime12Btn.Clicked(gtx) {
+		u.cfg.Units.TimeFormat = "12h"
+		u.saveState()
+	}
 }
 
 func (u *UI) runCheckNow() {
-	if err := u.syncLocationFromEditors(); err != nil {
-		u.setStatus(err.Error(), true)
-		return
+	u.runCheck(true, "manual")
+}
+
+func (u *UI) runCheck(applyEditorLocation bool, reason string) {
+	if applyEditorLocation {
+		if err := u.syncLocationFromEditors(); err != nil {
+			u.setStatus(err.Error(), true)
+			return
+		}
 	}
 
 	oldRisk := u.overallRisk
@@ -221,16 +292,17 @@ func (u *UI) runCheckNow() {
 	u.hasChecked = true
 	u.history = append(u.history, result)
 	u.pruneHistory()
+	u.scheduleNextCheck(result.CheckedAt)
 	u.saveState()
 
 	if err != nil {
 		u.setStatus(
-			fmt.Sprintf("Check completed with fallback data: %v", err),
+			fmt.Sprintf("Check (%s) completed with fallback data: %v", reason, err),
 			true,
 		)
 	} else {
 		u.setStatus(
-			fmt.Sprintf("Check completed at %s. Risk=%s.", result.CheckedAt.Format("2006-01-02 15:04:05"), result.OverallRisk.String()),
+			fmt.Sprintf("Check (%s) completed at %s. Risk=%s.", reason, u.formatTime(result.CheckedAt), result.OverallRisk.String()),
 			false,
 		)
 	}
@@ -426,9 +498,12 @@ func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
 			return locationLine.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			primaryPressure, _ := domain.ConvertPressureDelta(u.metrics.PressureDeltaHPa, u.cfg.Units.PressureUnit)
 			value := material.Body1(
 				u.theme,
-				fmt.Sprintf("Pressure delta: %.2f hPa | %.2f mmHg | %.2f inHg",
+				fmt.Sprintf("Pressure delta: %.2f %s | %.2f hPa | %.2f mmHg | %.2f inHg",
+					primaryPressure,
+					u.cfg.Units.PressureUnit,
 					u.metrics.PressureDeltaHPa,
 					domain.PressureDeltaMMHg(u.metrics.PressureDeltaHPa),
 					domain.PressureDeltaInHg(u.metrics.PressureDeltaHPa),
@@ -446,7 +521,7 @@ func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			value := material.Body1(
 				u.theme,
-				fmt.Sprintf("Source risks: pressure=%s, k-index=%s", u.pressureRisk.String(), u.kIndexRisk.String()),
+				fmt.Sprintf("Source risks: pressure=%s, k-index=%s | Time format: %s", u.pressureRisk.String(), u.kIndexRisk.String(), u.cfg.Units.TimeFormat),
 			)
 			return value.Layout(gtx)
 		}),
@@ -456,7 +531,17 @@ func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
 			}
 			value := material.Body2(
 				u.theme,
-				fmt.Sprintf("Last check: %s", u.lastCheck.Format("2006-01-02 15:04:05")),
+				fmt.Sprintf("Last check: %s", u.formatTime(u.lastCheck)),
+			)
+			return value.Layout(gtx)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if u.nextScheduledCheck.IsZero() {
+				return layout.Dimensions{}
+			}
+			value := material.Body2(
+				u.theme,
+				fmt.Sprintf("Next scheduled check: %s", u.formatTime(u.nextScheduledCheck)),
 			)
 			return value.Layout(gtx)
 		}),
@@ -488,7 +573,7 @@ func (u *UI) layoutHistory(gtx layout.Context) layout.Dimensions {
 				item := u.history[len(u.history)-1-index]
 				line := fmt.Sprintf(
 					"%s | risk=%s | delta=%.2f hPa | K=%.1f",
-					item.CheckedAt.Format("2006-01-02 15:04:05"),
+					u.formatTime(item.CheckedAt),
 					item.OverallRisk.String(),
 					item.PressureDeltaHPa,
 					item.KIndex,
@@ -614,24 +699,135 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(u.theme, fmt.Sprintf("Schedule period: %d min (minimum %d min)", u.cfg.Schedule.PeriodMinutes, u.cfg.Schedule.MinMinutes))
+			txt := material.Body1(u.theme, "Risk thresholds (editable)")
 			return txt.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(u.theme, fmt.Sprintf("History retention default: %d days, max: %d years", u.cfg.Retention.DefaultDays, u.cfg.Retention.MaxYears))
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					ed := material.Editor(u.theme, &u.setPressureMediumEditor, "Pressure medium")
+					return ed.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					ed := material.Editor(u.theme, &u.setPressureHighEditor, "Pressure high")
+					return ed.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					ed := material.Editor(u.theme, &u.setPressureCritEditor, "Pressure critical")
+					return ed.Layout(gtx)
+				}),
+			)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					ed := material.Editor(u.theme, &u.setKMediumEditor, "K medium")
+					return ed.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					ed := material.Editor(u.theme, &u.setKHighEditor, "K high")
+					return ed.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					ed := material.Editor(u.theme, &u.setKCritEditor, "K critical")
+					return ed.Layout(gtx)
+				}),
+			)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			txt := material.Body1(
+				u.theme,
+				fmt.Sprintf("Current pressure: medium>%.1f, high>%.1f, critical>%.1f", u.cfg.Pressure.Medium, u.cfg.Pressure.High, u.cfg.Pressure.Crit),
+			)
 			return txt.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(u.theme, fmt.Sprintf("Pressure thresholds: medium>%.1f, high>%.1f, critical>%.1f", u.cfg.Pressure.Medium, u.cfg.Pressure.High, u.cfg.Pressure.Crit))
+			txt := material.Body1(
+				u.theme,
+				fmt.Sprintf("Current K-index: medium>=%.1f, high>=%.1f, critical>=%.1f", u.cfg.KIndex.Medium, u.cfg.KIndex.High, u.cfg.KIndex.Crit),
+			)
+			return txt.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			txt := material.Body1(
+				u.theme,
+				fmt.Sprintf("Schedule period min (>= %d) and retention days (max %d years)", u.cfg.Schedule.MinMinutes, u.cfg.Retention.MaxYears),
+			)
 			return txt.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(u.theme, fmt.Sprintf("K-index thresholds: medium>=%.1f, high>=%.1f, critical>=%.1f", u.cfg.KIndex.Medium, u.cfg.KIndex.High, u.cfg.KIndex.Crit))
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					ed := material.Editor(u.theme, &u.setScheduleEditor, "Schedule minutes")
+					return ed.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					ed := material.Editor(u.theme, &u.setRetentionDaysEditor, "Retention days")
+					return ed.Layout(gtx)
+				}),
+			)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			ed := material.Editor(u.theme, &u.setLanguageEditor, "Language code (system, en, de, uk)")
+			return ed.Layout(gtx)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			txt := material.Body2(u.theme, fmt.Sprintf("Available language codes: %v", u.cfg.Languages))
+			return txt.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			btn := material.Button(u.theme, &u.applySettingsBtn, "Apply settings")
+			return btn.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			txt := material.Body1(u.theme, fmt.Sprintf("Pressure unit: %s", u.cfg.Units.PressureUnit))
+			return txt.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.setUnitHPaBtn, selectedLabel(u.cfg.Units.PressureUnit == "hPa", "hPa"))
+					return btn.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.setUnitMMHgBtn, selectedLabel(u.cfg.Units.PressureUnit == "mmHg", "mmHg"))
+					return btn.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.setUnitInHgBtn, selectedLabel(u.cfg.Units.PressureUnit == "inHg", "inHg"))
+					return btn.Layout(gtx)
+				}),
+			)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			txt := material.Body1(u.theme, fmt.Sprintf("Time format: %s", u.cfg.Units.TimeFormat))
 			return txt.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(u.theme, fmt.Sprintf("Language options: %v", u.cfg.Languages))
-			return txt.Layout(gtx)
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.setTime24Btn, selectedLabel(u.cfg.Units.TimeFormat == "24h", "24h"))
+					return btn.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.setTime12Btn, selectedLabel(u.cfg.Units.TimeFormat == "12h", "12h"))
+					return btn.Layout(gtx)
+				}),
+			)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -847,6 +1043,131 @@ func (u *UI) setStatus(message string, isError bool) {
 	u.statusMessageError = isError
 }
 
+func (u *UI) initSettingsEditors() {
+	editors := []*widget.Editor{
+		&u.setPressureMediumEditor,
+		&u.setPressureHighEditor,
+		&u.setPressureCritEditor,
+		&u.setKMediumEditor,
+		&u.setKHighEditor,
+		&u.setKCritEditor,
+		&u.setScheduleEditor,
+		&u.setRetentionDaysEditor,
+		&u.setLanguageEditor,
+	}
+	for _, ed := range editors {
+		ed.SingleLine = true
+	}
+	u.setPressureMediumEditor.SetText(fmt.Sprintf("%.1f", u.cfg.Pressure.Medium))
+	u.setPressureHighEditor.SetText(fmt.Sprintf("%.1f", u.cfg.Pressure.High))
+	u.setPressureCritEditor.SetText(fmt.Sprintf("%.1f", u.cfg.Pressure.Crit))
+	u.setKMediumEditor.SetText(fmt.Sprintf("%.1f", u.cfg.KIndex.Medium))
+	u.setKHighEditor.SetText(fmt.Sprintf("%.1f", u.cfg.KIndex.High))
+	u.setKCritEditor.SetText(fmt.Sprintf("%.1f", u.cfg.KIndex.Crit))
+	u.setScheduleEditor.SetText(fmt.Sprintf("%d", u.cfg.Schedule.PeriodMinutes))
+	u.setRetentionDaysEditor.SetText(fmt.Sprintf("%d", u.cfg.Retention.DefaultDays))
+	u.setLanguageEditor.SetText(u.cfg.Language)
+}
+
+func (u *UI) applySettingsFromEditors() error {
+	cfg := u.cfg
+
+	pressureMedium, err := parseFloatEditor(&u.setPressureMediumEditor, "pressure medium")
+	if err != nil {
+		return err
+	}
+	pressureHigh, err := parseFloatEditor(&u.setPressureHighEditor, "pressure high")
+	if err != nil {
+		return err
+	}
+	pressureCrit, err := parseFloatEditor(&u.setPressureCritEditor, "pressure critical")
+	if err != nil {
+		return err
+	}
+	kMedium, err := parseFloatEditor(&u.setKMediumEditor, "k-index medium")
+	if err != nil {
+		return err
+	}
+	kHigh, err := parseFloatEditor(&u.setKHighEditor, "k-index high")
+	if err != nil {
+		return err
+	}
+	kCrit, err := parseFloatEditor(&u.setKCritEditor, "k-index critical")
+	if err != nil {
+		return err
+	}
+	scheduleMinutes, err := parseIntEditor(&u.setScheduleEditor, "schedule period")
+	if err != nil {
+		return err
+	}
+	retentionDays, err := parseIntEditor(&u.setRetentionDaysEditor, "retention days")
+	if err != nil {
+		return err
+	}
+	language := strings.TrimSpace(u.setLanguageEditor.Text())
+	if language == "" {
+		language = "system"
+	}
+
+	cfg.Pressure = domain.PressureThresholds{
+		Medium: pressureMedium,
+		High:   pressureHigh,
+		Crit:   pressureCrit,
+	}
+	cfg.KIndex = domain.KIndexThresholds{
+		Medium: kMedium,
+		High:   kHigh,
+		Crit:   kCrit,
+	}
+	cfg.Schedule.PeriodMinutes = scheduleMinutes
+	cfg.Retention.DefaultDays = retentionDays
+	cfg.Language = language
+
+	if err := domain.ValidateConfig(cfg); err != nil {
+		return err
+	}
+
+	u.cfg = cfg
+	u.recomputeRisk()
+	u.pruneHistory()
+	u.scheduleNextCheck(time.Now())
+	u.saveState()
+	return nil
+}
+
+func (u *UI) shouldRunScheduledCheck(now time.Time) bool {
+	if !u.hasChecked {
+		return false
+	}
+	if u.cfg.Schedule.PeriodMinutes < u.cfg.Schedule.MinMinutes {
+		return false
+	}
+	if u.nextScheduledCheck.IsZero() {
+		u.scheduleNextCheck(now)
+		return false
+	}
+	return !u.nextScheduledCheck.After(now)
+}
+
+func (u *UI) scheduleNextCheck(from time.Time) {
+	period := time.Duration(u.cfg.Schedule.PeriodMinutes) * time.Minute
+	if period <= 0 {
+		u.nextScheduledCheck = time.Time{}
+		return
+	}
+	u.nextScheduledCheck = from.Add(period)
+}
+
+func (u *UI) formatTime(ts time.Time) string {
+	if ts.IsZero() {
+		return "-"
+	}
+	if u.cfg.Units.TimeFormat == "12h" {
+		return ts.Local().Format("2006-01-02 03:04:05 PM")
+	}
+	return ts.Local().Format("2006-01-02 15:04:05")
+}
+
 func (u *UI) pruneHistory() {
 	if u.cfg.Retention.DefaultDays <= 0 {
 		return
@@ -875,6 +1196,24 @@ func (u *UI) loadState() {
 	}
 
 	u.cfg = state.Config
+	if u.cfg.Schedule.MinMinutes < 15 {
+		u.cfg.Schedule.MinMinutes = 15
+	}
+	if u.cfg.Retention.MaxYears < 1 {
+		u.cfg.Retention.MaxYears = 50
+	}
+	if u.cfg.Units.PressureUnit == "" {
+		u.cfg.Units.PressureUnit = "hPa"
+	}
+	if u.cfg.Units.TimeFormat == "" {
+		u.cfg.Units.TimeFormat = "24h"
+	}
+	if u.cfg.Language == "" {
+		u.cfg.Language = "system"
+	}
+	if len(u.cfg.Languages) == 0 {
+		u.cfg.Languages = []string{"system", "en", "de", "uk"}
+	}
 	u.locationLat = state.LocationLat
 	u.locationLon = state.LocationLon
 	u.selectedCity = state.SelectedCity
@@ -890,7 +1229,9 @@ func (u *UI) loadState() {
 	u.hasChecked = state.HasChecked
 	if state.LastCheckUTC > 0 {
 		u.lastCheck = time.Unix(state.LastCheckUTC, 0).UTC()
+		u.scheduleNextCheck(u.lastCheck)
 	}
+	u.initSettingsEditors()
 	u.recomputeRisk()
 }
 
@@ -923,6 +1264,31 @@ func defaultLocationIndex(selected location.City, cities []location.City) int {
 		}
 	}
 	return 0
+}
+
+func parseFloatEditor(editor *widget.Editor, label string) (float64, error) {
+	raw := strings.TrimSpace(editor.Text())
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %q", label, raw)
+	}
+	return value, nil
+}
+
+func parseIntEditor(editor *widget.Editor, label string) (int, error) {
+	raw := strings.TrimSpace(editor.Text())
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %q", label, raw)
+	}
+	return value, nil
+}
+
+func selectedLabel(selected bool, text string) string {
+	if selected {
+		return "• " + text
+	}
+	return text
 }
 
 func thresholdLabel(level domain.RiskLevel, t domain.PressureThresholds) float64 {
