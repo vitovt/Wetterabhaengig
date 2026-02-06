@@ -65,16 +65,14 @@ type UI struct {
 	menuScrimBtn widget.Clickable
 	menuOpen     bool
 
-	checkNowBtn         widget.Clickable
-	homeCheckNowBtn     widget.Clickable
-	settingsTestBtn     widget.Clickable
-	testPageTestBtn     widget.Clickable
-	toggleNotifBtn      widget.Clickable
-	toggleBgChecksBtn   widget.Clickable
-	applySettingsBtn    widget.Clickable
-	homeDetailsBtn      widget.Clickable
-	shortcutHistoryBtn  widget.Clickable
-	shortcutSettingsBtn widget.Clickable
+	checkNowBtn       widget.Clickable
+	homeCheckNowBtn   widget.Clickable
+	settingsTestBtn   widget.Clickable
+	testPageTestBtn   widget.Clickable
+	toggleNotifBtn    widget.Clickable
+	toggleBgChecksBtn widget.Clickable
+	applySettingsBtn  widget.Clickable
+	homeDetailsBtn    widget.Clickable
 
 	setPressureMediumEditor widget.Editor
 	setPressureHighEditor   widget.Editor
@@ -303,12 +301,6 @@ func (u *UI) handleActions(gtx layout.Context) {
 	for u.homeDetailsBtn.Clicked(gtx) {
 		u.homeDetailsExpanded = !u.homeDetailsExpanded
 		u.saveState()
-	}
-	for u.shortcutHistoryBtn.Clicked(gtx) {
-		u.setScreen(ScreenHistory, compact)
-	}
-	for u.shortcutSettingsBtn.Clicked(gtx) {
-		u.setScreen(ScreenSettings, compact)
 	}
 	for u.applyCoordsBtn.Clicked(gtx) {
 		if !u.locationDirty {
@@ -860,15 +852,13 @@ func (u *UI) layoutHomeDetails(gtx layout.Context) layout.Dimensions {
 					}
 
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-						layout.Rigid(u.layoutDetailsChecksGroup),
-						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 						layout.Rigid(u.layoutDetailsTriggerGroup),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+						layout.Rigid(u.layoutDetailsChecksGroup),
 						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 						layout.Rigid(u.layoutDetailsMeasurementsGroup),
 						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 						layout.Rigid(u.layoutDetailsLocationGroup),
-						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-						layout.Rigid(u.layoutDetailsShortcutsGroup),
 					)
 				}),
 			)
@@ -998,23 +988,6 @@ func (u *UI) layoutDetailsLocationGroup(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return u.layoutDetailRow(gtx, u.tr("details.coordinates", "Coordinates"), u.trf("details.coordinates_value", "%.4f, %.4f", u.locationLat, u.locationLon))
-		}),
-	)
-}
-
-func (u *UI) layoutDetailsShortcutsGroup(gtx layout.Context) layout.Dimensions {
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return u.layoutGroupTitle(gtx, u.tr("group.shortcuts", "Shortcuts"))
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.shortcutHistoryBtn, u.tr("shortcut.history", "View history chart"))
-			return btn.Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.shortcutSettingsBtn, u.tr("shortcut.settings", "Configure thresholds"))
-			return btn.Layout(gtx)
 		}),
 	)
 }
