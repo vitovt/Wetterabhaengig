@@ -37,6 +37,7 @@ const (
 	ScreenHome Screen = iota
 	ScreenHistory
 	ScreenSettings
+	ScreenLocation
 	ScreenTest
 )
 
@@ -54,6 +55,7 @@ type UI struct {
 	navHome      widget.Clickable
 	navHistory   widget.Clickable
 	navSettings  widget.Clickable
+	navLocation  widget.Clickable
 	navTest      widget.Clickable
 	menuOpenBtn  widget.Clickable
 	menuCloseBtn widget.Clickable
@@ -85,23 +87,32 @@ type UI struct {
 	languageToggleBtn    widget.Clickable
 	languageSearchEditor widget.Editor
 	languageDropdownOpen bool
+	settingsLanguage     string
 
-	latEditor        widget.Editor
-	lonEditor        widget.Editor
-	cities           []location.City
-	cityButtons      []widget.Clickable
-	cityList         layout.List
-	cityToggleBtn    widget.Clickable
-	citySearchEditor widget.Editor
-	cityDropdownOpen bool
-	selectedCity     int
-	locationLat      float64
-	locationLon      float64
-	applyCoordsBtn   widget.Clickable
+	latEditor         widget.Editor
+	lonEditor         widget.Editor
+	cities            []location.City
+	cityButtons       []widget.Clickable
+	cityList          layout.List
+	cityToggleBtn     widget.Clickable
+	citySearchEditor  widget.Editor
+	cityDropdownOpen  bool
+	selectedCity      int
+	draftSelectedCity int
+	locationLat       float64
+	locationLon       float64
+	applyCoordsBtn    widget.Clickable
 
-	history      []service.Result
-	historyList  layout.List
-	settingsList layout.List
+	history       []service.Result
+	historyList   layout.List
+	settingsList  layout.List
+	locationList  layout.List
+	settingsDirty bool
+	locationDirty bool
+
+	settingsNotificationsEnabled bool
+	settingsPressureUnit         string
+	settingsTimeFormat           string
 
 	metrics      domain.Metrics
 	pressureRisk domain.RiskLevel
@@ -116,6 +127,7 @@ type UI struct {
 	autoCheckPending     bool
 	nextScheduledCheck   time.Time
 	platformLanguageInit bool
+	lastScreen           Screen
 }
 
 func New() *UI {
@@ -145,12 +157,16 @@ func New() *UI {
 		settingsList: layout.List{
 			Axis: layout.Vertical,
 		},
+		locationList: layout.List{
+			Axis: layout.Vertical,
+		},
 		metrics: domain.Metrics{
 			PressureDeltaHPa: 0,
 			KIndex:           0,
 		},
 		statusMessage:    "Ready. Press Check now to load live data.",
 		autoCheckPending: true,
+		lastScreen:       ScreenHome,
 	}
 
 	if storePath, err := storage.DefaultPath("wetterabhaengig"); err == nil {
@@ -165,11 +181,8 @@ func New() *UI {
 	u.lonEditor.SingleLine = true
 	u.citySearchEditor.SingleLine = true
 	u.languageSearchEditor.SingleLine = true
-	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
-	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
-	if u.setScheduleEditor.Text() == "" {
-		u.initSettingsEditors()
-	}
+	u.resetLocationDraft()
+	u.resetSettingsDraft()
 	u.recomputeRisk()
 	return u
 }
@@ -209,6 +222,7 @@ func Run(window *app.Window) error {
 
 func (u *UI) handleActions(gtx layout.Context) {
 	compact := u.isCompactLayout(gtx)
+	u.updateDirtyState()
 
 	if u.autoCheckPending {
 		u.autoCheckPending = false
@@ -219,28 +233,19 @@ func (u *UI) handleActions(gtx layout.Context) {
 	}
 
 	for u.navHome.Clicked(gtx) {
-		u.screen = ScreenHome
-		if compact {
-			u.menuOpen = false
-		}
+		u.setScreen(ScreenHome, compact)
 	}
 	for u.navHistory.Clicked(gtx) {
-		u.screen = ScreenHistory
-		if compact {
-			u.menuOpen = false
-		}
+		u.setScreen(ScreenHistory, compact)
 	}
 	for u.navSettings.Clicked(gtx) {
-		u.screen = ScreenSettings
-		if compact {
-			u.menuOpen = false
-		}
+		u.setScreen(ScreenSettings, compact)
+	}
+	for u.navLocation.Clicked(gtx) {
+		u.setScreen(ScreenLocation, compact)
 	}
 	for u.navTest.Clicked(gtx) {
-		u.screen = ScreenTest
-		if compact {
-			u.menuOpen = false
-		}
+		u.setScreen(ScreenTest, compact)
 	}
 	for u.menuOpenBtn.Clicked(gtx) {
 		u.menuOpen = true
@@ -258,21 +263,19 @@ func (u *UI) handleActions(gtx layout.Context) {
 		}
 	}
 	for u.applyCoordsBtn.Clicked(gtx) {
+		if !u.locationDirty {
+			continue
+		}
 		if err := u.syncLocationFromEditors(); err != nil {
 			u.setStatus(err.Error(), true)
 		} else {
 			u.setStatus(u.trf("status.location_updated", "Location updated: %.4f, %.4f", u.locationLat, u.locationLon), false)
 			u.saveState()
+			u.resetLocationDraft()
 		}
 	}
 	for u.toggleNotifBtn.Clicked(gtx) {
-		u.cfg.Notifications.Enabled = !u.cfg.Notifications.Enabled
-		if u.cfg.Notifications.Enabled {
-			u.setStatus(u.tr("status.notifications_enabled", "Notifications enabled."), false)
-		} else {
-			u.setStatus(u.tr("status.notifications_disabled", "Notifications disabled."), false)
-		}
-		u.saveState()
+		u.settingsNotificationsEnabled = !u.settingsNotificationsEnabled
 	}
 	for u.settingsTestBtn.Clicked(gtx) {
 		u.triggerTestNotification()
@@ -296,43 +299,43 @@ func (u *UI) handleActions(gtx layout.Context) {
 			break
 		}
 		for u.languageButtons[idx].Clicked(gtx) {
-			u.selectLanguage(u.cfg.Languages[idx])
+			u.selectLanguageDraft(u.cfg.Languages[idx])
 		}
 	}
 	for u.applySettingsBtn.Clicked(gtx) {
+		if !u.settingsDirty {
+			continue
+		}
 		if err := u.applySettingsFromEditors(); err != nil {
 			u.setStatus(err.Error(), true)
 		} else {
-			u.setStatus(u.tr("status.settings_applied", "Settings applied."), false)
+			u.setStatus(u.tr("status.settings_saved", "Settings saved."), false)
+			u.resetSettingsDraft()
 		}
 	}
 	for u.setUnitHPaBtn.Clicked(gtx) {
-		u.cfg.Units.PressureUnit = "hPa"
-		u.saveState()
+		u.settingsPressureUnit = "hPa"
 	}
 	for u.setUnitMMHgBtn.Clicked(gtx) {
-		u.cfg.Units.PressureUnit = "mmHg"
-		u.saveState()
+		u.settingsPressureUnit = "mmHg"
 	}
 	for u.setUnitInHgBtn.Clicked(gtx) {
-		u.cfg.Units.PressureUnit = "inHg"
-		u.saveState()
+		u.settingsPressureUnit = "inHg"
 	}
 	for u.setTime24Btn.Clicked(gtx) {
-		u.cfg.Units.TimeFormat = "24h"
-		u.saveState()
+		u.settingsTimeFormat = "24h"
 	}
 	for u.setTime12Btn.Clicked(gtx) {
-		u.cfg.Units.TimeFormat = "12h"
-		u.saveState()
+		u.settingsTimeFormat = "12h"
 	}
 	for u.getGPSBtn.Clicked(gtx) {
 		u.getCurrentLocationViaGPS()
 	}
+	u.updateDirtyState()
 }
 
 func (u *UI) runCheckNow() {
-	u.runCheck(true, "manual")
+	u.runCheck(false, "manual")
 }
 
 func (u *UI) runCheck(applyEditorLocation bool, reason string) {
@@ -579,6 +582,8 @@ func (u *UI) layoutSidebar(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(u.layoutNavRow(&u.navSettings, ScreenSettings, u.tr("nav.settings", "Settings"))),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		layout.Rigid(u.layoutNavRow(&u.navLocation, ScreenLocation, u.tr("nav.location", "Location"))),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(u.layoutNavRow(&u.navTest, ScreenTest, u.tr("nav.test", "Test"))),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(18)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -606,6 +611,8 @@ func (u *UI) screenName() string {
 		return u.tr("nav.history", "History")
 	case ScreenSettings:
 		return u.tr("nav.settings", "Settings")
+	case ScreenLocation:
+		return u.tr("nav.location", "Location")
 	case ScreenTest:
 		return u.tr("nav.test", "Test")
 	default:
@@ -621,6 +628,8 @@ func (u *UI) layoutCurrentScreen(gtx layout.Context) layout.Dimensions {
 		return u.layoutHistory(gtx)
 	case ScreenSettings:
 		return u.layoutSettings(gtx)
+	case ScreenLocation:
+		return u.layoutLocation(gtx)
 	case ScreenTest:
 		return u.layoutTest(gtx)
 	default:
@@ -849,7 +858,7 @@ func drawLine(gtx layout.Context, x1, y1, x2, y2, width float32, col color.NRGBA
 
 func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 	notificationState := u.tr("common.on", "ON")
-	if !u.cfg.Notifications.Enabled {
+	if !u.settingsNotificationsEnabled {
 		notificationState = u.tr("common.off", "OFF")
 	}
 
@@ -967,7 +976,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 						fmt.Sprintf(
 							"%s: %s",
 							u.tr("settings.current_language", "Current language"),
-							u.languageDisplayName(u.cfg.Language),
+							u.languageDisplayName(u.settingsLanguage),
 						),
 					)
 					return txt.Layout(gtx)
@@ -978,57 +987,85 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.applySettingsBtn, u.tr("buttons.apply_settings", "Apply settings"))
-					return btn.Layout(gtx)
+					return u.layoutPrimaryButton(gtx, &u.applySettingsBtn, u.tr("buttons.save_settings", "Save settings"), u.settingsDirty)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					txt := material.Body1(u.theme, u.trf("settings.pressure_unit", "Pressure unit: %s", u.cfg.Units.PressureUnit))
+					txt := material.Body1(u.theme, u.trf("settings.pressure_unit", "Pressure unit: %s", u.settingsPressureUnit))
 					return txt.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							btn := material.Button(u.theme, &u.setUnitHPaBtn, selectedLabel(u.cfg.Units.PressureUnit == "hPa", "hPa"))
+							btn := material.Button(u.theme, &u.setUnitHPaBtn, selectedLabel(u.settingsPressureUnit == "hPa", "hPa"))
 							return btn.Layout(gtx)
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							btn := material.Button(u.theme, &u.setUnitMMHgBtn, selectedLabel(u.cfg.Units.PressureUnit == "mmHg", "mmHg"))
+							btn := material.Button(u.theme, &u.setUnitMMHgBtn, selectedLabel(u.settingsPressureUnit == "mmHg", "mmHg"))
 							return btn.Layout(gtx)
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							btn := material.Button(u.theme, &u.setUnitInHgBtn, selectedLabel(u.cfg.Units.PressureUnit == "inHg", "inHg"))
+							btn := material.Button(u.theme, &u.setUnitInHgBtn, selectedLabel(u.settingsPressureUnit == "inHg", "inHg"))
 							return btn.Layout(gtx)
 						}),
 					)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					txt := material.Body1(u.theme, u.trf("settings.time_format", "Time format: %s", u.cfg.Units.TimeFormat))
+					txt := material.Body1(u.theme, u.trf("settings.time_format", "Time format: %s", u.settingsTimeFormat))
 					return txt.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							btn := material.Button(u.theme, &u.setTime24Btn, selectedLabel(u.cfg.Units.TimeFormat == "24h", "24h"))
+							btn := material.Button(u.theme, &u.setTime24Btn, selectedLabel(u.settingsTimeFormat == "24h", "24h"))
 							return btn.Layout(gtx)
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							btn := material.Button(u.theme, &u.setTime12Btn, selectedLabel(u.cfg.Units.TimeFormat == "12h", "12h"))
+							btn := material.Button(u.theme, &u.setTime12Btn, selectedLabel(u.settingsTimeFormat == "12h", "12h"))
 							return btn.Layout(gtx)
 						}),
 					)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					txt := material.Body1(u.theme, u.tr("settings.location_coordinates", "Location coordinates"))
-					return txt.Layout(gtx)
+					btn := material.Button(u.theme, &u.toggleNotifBtn, fmt.Sprintf("%s (%s)", u.tr("buttons.toggle_notifications", "Toggle notifications"), notificationState))
+					return btn.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.settingsTestBtn, u.tr("buttons.test_notification", "Test notification"))
+					return btn.Layout(gtx)
+				}),
+			)
+		})
+	})
+}
+
+func (u *UI) layoutLocation(gtx layout.Context) layout.Dimensions {
+	return u.locationList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+		content := gtx
+		content.Constraints.Min.Y = 0
+		content.Constraints.Max.Y = 1_000_000
+		return layout.Inset{Bottom: unit.Dp(12)}.Layout(content, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					title := material.H6(u.theme, u.tr("nav.location", "Location"))
+					return title.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body2(
+						u.theme,
+						u.trf("home.location", "Location: %.4f, %.4f", u.locationLat, u.locationLon),
+					)
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					btn := material.Button(u.theme, &u.getGPSBtn, u.tr("buttons.get_gps_location", "Get my current location via GPS"))
 					return btn.Layout(gtx)
@@ -1049,26 +1086,24 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.applyCoordsBtn, u.tr("buttons.apply_coordinates", "Apply coordinates"))
-					return btn.Layout(gtx)
+					return u.layoutPrimaryButton(gtx, &u.applyCoordsBtn, u.tr("buttons.save_location", "Save location"), u.locationDirty)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return u.layoutCityDropdown(gtx)
 				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.toggleNotifBtn, fmt.Sprintf("%s (%s)", u.tr("buttons.toggle_notifications", "Toggle notifications"), notificationState))
-					return btn.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.settingsTestBtn, u.tr("buttons.test_notification", "Test notification"))
-					return btn.Layout(gtx)
-				}),
 			)
 		})
 	})
+}
+
+func (u *UI) layoutPrimaryButton(gtx layout.Context, clickable *widget.Clickable, text string, enabled bool) layout.Dimensions {
+	btn := material.Button(u.theme, clickable, text)
+	if !enabled {
+		btn.Background = color.NRGBA{A: 255, R: 185, G: 185, B: 185}
+		btn.Color = color.NRGBA{A: 255, R: 95, G: 95, B: 95}
+	}
+	return btn.Layout(gtx)
 }
 
 func (u *UI) layoutTest(gtx layout.Context) layout.Dimensions {
@@ -1178,11 +1213,11 @@ func (u *UI) layoutCityDropdown(gtx layout.Context) layout.Dimensions {
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			label := u.trf("settings.city", "City: %s", u.currentCityName())
+			label := u.trf("settings.city", "City: %s", u.currentDraftCityName())
 			if u.cityDropdownOpen {
-				label = u.trf("settings.city", "City: %s", u.currentCityName()) + " ▲"
+				label = u.trf("settings.city", "City: %s", u.currentDraftCityName()) + " ▲"
 			} else {
-				label = u.trf("settings.city", "City: %s", u.currentCityName()) + " ▼"
+				label = u.trf("settings.city", "City: %s", u.currentDraftCityName()) + " ▼"
 			}
 			btn := material.Button(u.theme, &u.cityToggleBtn, label)
 			return btn.Layout(gtx)
@@ -1208,7 +1243,7 @@ func (u *UI) layoutCityDropdown(gtx layout.Context) layout.Dimensions {
 							idx := cityIndex
 							children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								enabledLabel := u.cities[idx].Name
-								if idx == u.selectedCity {
+								if idx == u.draftSelectedCity {
 									enabledLabel = "• " + enabledLabel
 								}
 								btn := material.Button(u.theme, &u.cityButtons[idx], enabledLabel)
@@ -1233,7 +1268,7 @@ func (u *UI) layoutLanguageDropdown(gtx layout.Context) layout.Dimensions {
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			label := fmt.Sprintf("%s: %s", u.tr("settings.language", "Language"), u.languageDisplayName(u.cfg.Language))
+			label := fmt.Sprintf("%s: %s", u.tr("settings.language", "Language"), u.languageDisplayName(u.settingsLanguage))
 			if u.languageDropdownOpen {
 				label += " ▲"
 			} else {
@@ -1262,7 +1297,7 @@ func (u *UI) layoutLanguageDropdown(gtx layout.Context) layout.Dimensions {
 							idx := langIndex
 							children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								label := u.languageDisplayName(u.cfg.Languages[idx])
-								if u.cfg.Languages[idx] == u.cfg.Language {
+								if u.cfg.Languages[idx] == u.settingsLanguage {
 									label = "• " + label
 								}
 								btn := material.Button(u.theme, &u.languageButtons[idx], label)
@@ -1286,19 +1321,16 @@ func (u *UI) selectCity(index int) {
 	}
 	u.cityDropdownOpen = false
 	u.citySearchEditor.SetText("")
-	u.selectedCity = index
-	u.locationLat = u.cities[index].Lat
-	u.locationLon = u.cities[index].Lon
-	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
-	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
+	u.draftSelectedCity = index
+	u.latEditor.SetText(fmt.Sprintf("%.4f", u.cities[index].Lat))
+	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.cities[index].Lon))
 	u.setStatus(
-		u.trf("status.city_selected", "City selected: %s (%.4f, %.4f)", u.cities[index].Name, u.locationLat, u.locationLon),
+		u.trf("status.city_selected", "City selected: %s (%.4f, %.4f)", u.cities[index].Name, u.cities[index].Lat, u.cities[index].Lon),
 		false,
 	)
-	u.saveState()
 }
 
-func (u *UI) selectLanguage(language string) {
+func (u *UI) selectLanguageDraft(language string) {
 	if language == "" {
 		language = "system"
 	}
@@ -1306,17 +1338,12 @@ func (u *UI) selectLanguage(language string) {
 		u.setStatus(u.trf("status.unknown_language", "Unknown language: %s", language), true)
 		return
 	}
-	if u.cfg.Language == language {
+	if u.settingsLanguage == language {
 		return
 	}
-	u.cfg.Language = language
+	u.settingsLanguage = language
 	u.languageDropdownOpen = false
 	u.languageSearchEditor.SetText("")
-	u.saveState()
-	u.setStatus(
-		u.trf("status.language_switched", "Language switched to: %s", u.languageDisplayName(language)),
-		false,
-	)
 }
 
 func (u *UI) getCurrentLocationViaGPS() {
@@ -1329,16 +1356,13 @@ func (u *UI) getCurrentLocationViaGPS() {
 		return
 	}
 
-	u.locationLat = lat
-	u.locationLon = lon
-	u.selectedCity = -1
-	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
-	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
+	u.draftSelectedCity = -1
+	u.latEditor.SetText(fmt.Sprintf("%.4f", lat))
+	u.lonEditor.SetText(fmt.Sprintf("%.4f", lon))
 	u.setStatus(
-		u.trf("status.gps_applied", "GPS location applied: %.4f, %.4f", u.locationLat, u.locationLon),
+		u.trf("status.gps_applied", "GPS location applied: %.4f, %.4f", lat, lon),
 		false,
 	)
-	u.saveState()
 }
 
 func (u *UI) syncLocationFromEditors() error {
@@ -1361,14 +1385,15 @@ func (u *UI) syncLocationFromEditors() error {
 
 	u.locationLat = lat
 	u.locationLon = lon
+	u.selectedCity = u.cityIndexForCoordinates(lat, lon)
 	return nil
 }
 
-func (u *UI) currentCityName() string {
-	if u.selectedCity < 0 || u.selectedCity >= len(u.cities) {
+func (u *UI) currentDraftCityName() string {
+	if u.draftSelectedCity < 0 || u.draftSelectedCity >= len(u.cities) {
 		return u.tr("settings.custom_city", "custom")
 	}
-	return u.cities[u.selectedCity].Name
+	return u.cities[u.draftSelectedCity].Name
 }
 
 func (u *UI) filteredLanguageIndices() []int {
@@ -1436,7 +1461,7 @@ func (u *UI) trf(key, fallback string, args ...any) string {
 	return fmt.Sprintf(u.tr(key, fallback), args...)
 }
 
-func (u *UI) initSettingsEditors() {
+func (u *UI) resetSettingsDraft() {
 	editors := []*widget.Editor{
 		&u.setPressureMediumEditor,
 		&u.setPressureHighEditor,
@@ -1458,7 +1483,113 @@ func (u *UI) initSettingsEditors() {
 	u.setKCritEditor.SetText(fmt.Sprintf("%.1f", u.cfg.KIndex.Crit))
 	u.setScheduleEditor.SetText(fmt.Sprintf("%d", u.cfg.Schedule.PeriodMinutes))
 	u.setRetentionDaysEditor.SetText(fmt.Sprintf("%d", u.cfg.Retention.DefaultDays))
+	u.settingsPressureUnit = u.cfg.Units.PressureUnit
+	u.settingsTimeFormat = u.cfg.Units.TimeFormat
+	u.settingsNotificationsEnabled = u.cfg.Notifications.Enabled
+	u.settingsLanguage = strings.TrimSpace(u.cfg.Language)
+	if u.settingsLanguage == "" {
+		u.settingsLanguage = "system"
+	}
+	u.languageDropdownOpen = false
+	u.languageSearchEditor.SetText("")
 	u.syncLanguageButtons()
+	u.updateDirtyState()
+}
+
+func (u *UI) resetLocationDraft() {
+	u.latEditor.SingleLine = true
+	u.lonEditor.SingleLine = true
+	u.citySearchEditor.SingleLine = true
+	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
+	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
+	u.draftSelectedCity = u.selectedCity
+	u.cityDropdownOpen = false
+	u.citySearchEditor.SetText("")
+	u.updateDirtyState()
+}
+
+func (u *UI) updateDirtyState() {
+	u.settingsDirty = u.isSettingsDirty()
+	u.locationDirty = u.isLocationDirty()
+}
+
+func (u *UI) isSettingsDirty() bool {
+	if strings.TrimSpace(u.setPressureMediumEditor.Text()) != fmt.Sprintf("%.1f", u.cfg.Pressure.Medium) {
+		return true
+	}
+	if strings.TrimSpace(u.setPressureHighEditor.Text()) != fmt.Sprintf("%.1f", u.cfg.Pressure.High) {
+		return true
+	}
+	if strings.TrimSpace(u.setPressureCritEditor.Text()) != fmt.Sprintf("%.1f", u.cfg.Pressure.Crit) {
+		return true
+	}
+	if strings.TrimSpace(u.setKMediumEditor.Text()) != fmt.Sprintf("%.1f", u.cfg.KIndex.Medium) {
+		return true
+	}
+	if strings.TrimSpace(u.setKHighEditor.Text()) != fmt.Sprintf("%.1f", u.cfg.KIndex.High) {
+		return true
+	}
+	if strings.TrimSpace(u.setKCritEditor.Text()) != fmt.Sprintf("%.1f", u.cfg.KIndex.Crit) {
+		return true
+	}
+	if strings.TrimSpace(u.setScheduleEditor.Text()) != fmt.Sprintf("%d", u.cfg.Schedule.PeriodMinutes) {
+		return true
+	}
+	if strings.TrimSpace(u.setRetentionDaysEditor.Text()) != fmt.Sprintf("%d", u.cfg.Retention.DefaultDays) {
+		return true
+	}
+	if u.settingsPressureUnit != u.cfg.Units.PressureUnit {
+		return true
+	}
+	if u.settingsTimeFormat != u.cfg.Units.TimeFormat {
+		return true
+	}
+	if u.settingsNotificationsEnabled != u.cfg.Notifications.Enabled {
+		return true
+	}
+	if strings.TrimSpace(u.settingsLanguage) != strings.TrimSpace(u.cfg.Language) {
+		return true
+	}
+	return false
+}
+
+func (u *UI) isLocationDirty() bool {
+	if strings.TrimSpace(u.latEditor.Text()) != fmt.Sprintf("%.4f", u.locationLat) {
+		return true
+	}
+	if strings.TrimSpace(u.lonEditor.Text()) != fmt.Sprintf("%.4f", u.locationLon) {
+		return true
+	}
+	return u.draftSelectedCity != u.selectedCity
+}
+
+func (u *UI) setScreen(next Screen, compact bool) {
+	if u.screen != next {
+		u.onScreenLeave(u.screen)
+		u.lastScreen = u.screen
+		u.screen = next
+	}
+	if compact {
+		u.menuOpen = false
+	}
+}
+
+func (u *UI) onScreenLeave(from Screen) {
+	switch from {
+	case ScreenSettings:
+		u.resetSettingsDraft()
+	case ScreenLocation:
+		u.resetLocationDraft()
+	}
+}
+
+func (u *UI) cityIndexForCoordinates(lat, lon float64) int {
+	for i := range u.cities {
+		if almostEqual(u.cities[i].Lat, lat) && almostEqual(u.cities[i].Lon, lon) {
+			return i
+		}
+	}
+	return -1
 }
 
 func (u *UI) applySettingsFromEditors() error {
@@ -1508,7 +1639,16 @@ func (u *UI) applySettingsFromEditors() error {
 	}
 	cfg.Schedule.PeriodMinutes = scheduleMinutes
 	cfg.Retention.DefaultDays = retentionDays
-	cfg.Language = strings.TrimSpace(cfg.Language)
+	cfg.Units.PressureUnit = strings.TrimSpace(u.settingsPressureUnit)
+	if cfg.Units.PressureUnit == "" {
+		cfg.Units.PressureUnit = "hPa"
+	}
+	cfg.Units.TimeFormat = strings.TrimSpace(u.settingsTimeFormat)
+	if cfg.Units.TimeFormat == "" {
+		cfg.Units.TimeFormat = "24h"
+	}
+	cfg.Notifications.Enabled = u.settingsNotificationsEnabled
+	cfg.Language = strings.TrimSpace(u.settingsLanguage)
 	if cfg.Language == "" {
 		cfg.Language = "system"
 	}
@@ -1611,12 +1751,18 @@ func (u *UI) loadState() {
 	u.locationLat = state.LocationLat
 	u.locationLon = state.LocationLon
 	u.selectedCity = state.SelectedCity
-	if u.selectedCity < 0 || u.selectedCity >= len(u.cities) {
+	if u.selectedCity < -1 || u.selectedCity >= len(u.cities) {
 		u.selectedCity = 0
 	}
 	if u.locationLat == 0 && u.locationLon == 0 {
-		u.locationLat = u.cities[u.selectedCity].Lat
-		u.locationLon = u.cities[u.selectedCity].Lon
+		if u.selectedCity >= 0 && u.selectedCity < len(u.cities) {
+			u.locationLat = u.cities[u.selectedCity].Lat
+			u.locationLon = u.cities[u.selectedCity].Lon
+		} else if len(u.cities) > 0 {
+			u.selectedCity = 0
+			u.locationLat = u.cities[0].Lat
+			u.locationLon = u.cities[0].Lon
+		}
 	}
 	u.metrics = state.Metrics
 	u.history = state.History
@@ -1625,7 +1771,8 @@ func (u *UI) loadState() {
 		u.lastCheck = time.Unix(state.LastCheckUTC, 0).UTC()
 		u.scheduleNextCheck(u.lastCheck)
 	}
-	u.initSettingsEditors()
+	u.resetSettingsDraft()
+	u.resetLocationDraft()
 	u.recomputeRisk()
 }
 
@@ -1683,6 +1830,14 @@ func selectedLabel(selected bool, text string) string {
 		return "• " + text
 	}
 	return text
+}
+
+func almostEqual(a, b float64) bool {
+	delta := a - b
+	if delta < 0 {
+		delta = -delta
+	}
+	return delta < 0.00005
 }
 
 func containsString(items []string, needle string) bool {

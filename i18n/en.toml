@@ -5,8 +5,8 @@ subtitle = "Weather risk monitoring with traffic light status and numeric contex
 [buttons]
 check_now = "Check now"
 test_notification = "Test notification"
-apply_settings = "Apply settings"
-apply_coordinates = "Apply coordinates"
+save_settings = "Save settings"
+save_location = "Save location"
 toggle_notifications = "Toggle notifications"
 get_gps_location = "Get my current location via GPS"
 
@@ -14,6 +14,7 @@ get_gps_location = "Get my current location via GPS"
 home = "Home"
 history = "History"
 settings = "Settings"
+location = "Location"
 test = "Test"
 
 [menu]
@@ -32,7 +33,7 @@ ready = "Ready. Press Check now to load live data."
 location_updated = "Location updated: %.4f, %.4f"
 notifications_enabled = "Notifications enabled."
 notifications_disabled = "Notifications disabled."
-settings_applied = "Settings applied."
+settings_saved = "Settings saved."
 check_fallback = "Check (%s) completed with fallback data: %v"
 check_success = "Check (%s) completed at %s. Risk=%s."
 notification_local_error = "Notification #%d (in-app only): %s | local delivery error: %v"

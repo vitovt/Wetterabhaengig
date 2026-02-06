@@ -5,8 +5,8 @@ subtitle = "Моніторинг погодного ризику зі стату
 [buttons]
 check_now = "Перевірити зараз"
 test_notification = "Тест сповіщення"
-apply_settings = "Застосувати налаштування"
-apply_coordinates = "Застосувати координати"
+save_settings = "Зберегти налаштування"
+save_location = "Зберегти локацію"
 toggle_notifications = "Перемкнути сповіщення"
 get_gps_location = "Отримати мою поточну GPS-локацію"
 
@@ -14,6 +14,7 @@ get_gps_location = "Отримати мою поточну GPS-локацію"
 home = "Головна"
 history = "Історія"
 settings = "Налаштування"
+location = "Локація"
 test = "Тест"
 
 [menu]
@@ -32,7 +33,7 @@ ready = "Готово. Натисніть «Перевірити зараз», �
 location_updated = "Локацію оновлено: %.4f, %.4f"
 notifications_enabled = "Сповіщення увімкнено."
 notifications_disabled = "Сповіщення вимкнено."
-settings_applied = "Налаштування застосовано."
+settings_saved = "Налаштування збережено."
 check_fallback = "Перевірку (%s) завершено з резервними даними: %v"
 check_success = "Перевірку (%s) завершено о %s. Ризик=%s."
 notification_local_error = "Сповіщення #%d (лише в застосунку): %s | локальна помилка: %v"
