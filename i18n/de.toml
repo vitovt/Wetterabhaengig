@@ -93,6 +93,7 @@ background_checks_closed = "Pruefungen im Hintergrund bei geschlossener App ausf
 background_checks_note = "Standardmaessig aus. Dieser Modus ist nur fuer Android und abhaengig von Systemgrenzen fuer Akku/Hintergrund."
 pressure_unit = "Druckeinheit: %s"
 time_format = "Zeitformat: %s"
+time_format_switch = "24h-Format verwenden (aus = 12h)"
 location_coordinates = "Standortkoordinaten"
 latitude = "Breitengrad"
 longitude = "Laengengrad"

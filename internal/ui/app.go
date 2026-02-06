@@ -69,10 +69,11 @@ type UI struct {
 	homeCheckNowBtn     widget.Clickable
 	settingsTestBtn     widget.Clickable
 	testPageTestBtn     widget.Clickable
-	toggleBgChecksBtn   widget.Clickable
 	applySettingsBtn    widget.Clickable
 	homeDetailsBtn      widget.Clickable
 	settingsNotifSwitch widget.Bool
+	settingsTimeSwitch  widget.Bool
+	settingsBgSwitch    widget.Bool
 
 	setPressureMediumEditor widget.Editor
 	setPressureHighEditor   widget.Editor
@@ -86,8 +87,6 @@ type UI struct {
 	setUnitHPaBtn        widget.Clickable
 	setUnitMMHgBtn       widget.Clickable
 	setUnitInHgBtn       widget.Clickable
-	setTime24Btn         widget.Clickable
-	setTime12Btn         widget.Clickable
 	setThemeSystemBtn    widget.Clickable
 	setThemeLightBtn     widget.Clickable
 	setThemeDarkBtn      widget.Clickable
@@ -317,8 +316,15 @@ func (u *UI) handleActions(gtx layout.Context) {
 	if u.settingsNotifSwitch.Update(gtx) {
 		u.settingsNotificationsEnabled = u.settingsNotifSwitch.Value
 	}
-	for u.toggleBgChecksBtn.Clicked(gtx) {
-		u.settingsRunWhenClosed = !u.settingsRunWhenClosed
+	if u.settingsBgSwitch.Update(gtx) {
+		u.settingsRunWhenClosed = u.settingsBgSwitch.Value
+	}
+	if u.settingsTimeSwitch.Update(gtx) {
+		if u.settingsTimeSwitch.Value {
+			u.settingsTimeFormat = "24h"
+		} else {
+			u.settingsTimeFormat = "12h"
+		}
 	}
 	for u.settingsTestBtn.Clicked(gtx) {
 		u.triggerTestNotification()
@@ -364,12 +370,6 @@ func (u *UI) handleActions(gtx layout.Context) {
 	}
 	for u.setUnitInHgBtn.Clicked(gtx) {
 		u.settingsPressureUnit = "inHg"
-	}
-	for u.setTime24Btn.Clicked(gtx) {
-		u.settingsTimeFormat = "24h"
-	}
-	for u.setTime12Btn.Clicked(gtx) {
-		u.settingsTimeFormat = "12h"
 	}
 	for u.setThemeSystemBtn.Clicked(gtx) {
 		u.settingsThemeMode = "system"
@@ -1158,10 +1158,8 @@ func drawLine(gtx layout.Context, x1, y1, x2, y2, width float32, col color.NRGBA
 
 func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 	u.settingsNotifSwitch.Value = u.settingsNotificationsEnabled
-	backgroundState := u.tr("common.on", "ON")
-	if !u.settingsRunWhenClosed {
-		backgroundState = u.tr("common.off", "OFF")
-	}
+	u.settingsBgSwitch.Value = u.settingsRunWhenClosed
+	u.settingsTimeSwitch.Value = u.settingsTimeFormat == "24h"
 
 	return u.settingsList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 		content := gtx
@@ -1343,33 +1341,13 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 					return txt.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							btn := material.Button(u.theme, &u.setTime24Btn, selectedLabel(u.settingsTimeFormat == "24h", "24h"))
-							return btn.Layout(gtx)
-						}),
-						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							btn := material.Button(u.theme, &u.setTime12Btn, selectedLabel(u.settingsTimeFormat == "12h", "12h"))
-							return btn.Layout(gtx)
-						}),
-					)
+					sw := material.Switch(u.theme, &u.settingsTimeSwitch, u.tr("settings.time_format_switch", "Use 24h format (off = 12h)"))
+					return sw.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					txt := material.Body1(
-						u.theme,
-						fmt.Sprintf(
-							"%s (%s)",
-							u.tr("settings.background_checks_closed", "Run checks in background when app is closed (Android)"),
-							backgroundState,
-						),
-					)
-					return txt.Layout(gtx)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.toggleBgChecksBtn, u.tr("buttons.toggle_background_checks", "Toggle background checks when app is closed"))
-					return btn.Layout(gtx)
+					sw := material.Switch(u.theme, &u.settingsBgSwitch, u.tr("settings.background_checks_closed", "Run checks in background when app is closed (Android)"))
+					return sw.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					txt := material.Body2(
@@ -1870,6 +1848,8 @@ func (u *UI) resetSettingsDraft() {
 	u.settingsNotificationsEnabled = u.cfg.Notifications.Enabled
 	u.settingsNotifSwitch.Value = u.settingsNotificationsEnabled
 	u.settingsRunWhenClosed = u.cfg.Schedule.RunWhenClosed
+	u.settingsBgSwitch.Value = u.settingsRunWhenClosed
+	u.settingsTimeSwitch.Value = u.settingsTimeFormat == "24h"
 	u.settingsThemeMode = strings.TrimSpace(u.cfg.ThemeMode)
 	if u.settingsThemeMode == "" {
 		u.settingsThemeMode = "system"

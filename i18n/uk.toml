@@ -93,6 +93,7 @@ background_checks_closed = "Виконувати перевірки у фоні,
 background_checks_note = "За замовчуванням вимкнено. Цей режим лише для Android і залежить від системних обмежень батареї/фону."
 pressure_unit = "Одиниця тиску: %s"
 time_format = "Формат часу: %s"
+time_format_switch = "Використовувати формат 24h (вимкнено = 12h)"
 location_coordinates = "Координати локації"
 latitude = "Широта"
 longitude = "Довгота"

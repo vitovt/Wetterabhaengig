@@ -93,6 +93,7 @@ background_checks_closed = "Run checks in background when app is closed (Android
 background_checks_note = "Disabled by default. This mode is Android-only and depends on system battery/background limits."
 pressure_unit = "Pressure unit: %s"
 time_format = "Time format: %s"
+time_format_switch = "Use 24h format (off = 12h)"
 location_coordinates = "Location coordinates"
 latitude = "Latitude"
 longitude = "Longitude"
