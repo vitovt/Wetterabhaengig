@@ -8,6 +8,7 @@ test_notification = "Benachrichtigung testen"
 apply_settings = "Einstellungen anwenden"
 apply_coordinates = "Koordinaten anwenden"
 toggle_notifications = "Benachrichtigungen umschalten"
+get_gps_location = "Meinen aktuellen Standort per GPS holen"
 
 [nav]
 home = "Start"

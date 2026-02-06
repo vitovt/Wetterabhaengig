@@ -13,6 +13,7 @@ The app provides a quick traffic-light risk signal for a selected location and s
 - Live check flow using Open-Meteo and NOAA endpoints.
 - Default risk rules for pressure delta and planetary K-index.
 - Coordinate editing plus editable EU city list selection.
+- Android GPS session action: `Get my current location via GPS` (manual one-shot update).
 - Persistent local app state for settings, location, latest metrics, and history.
 - History screen with initial dual-axis chart rendering for pressure delta and K-index.
 - Test-notification actions on Settings and Test screens.
@@ -41,3 +42,4 @@ Android build target also requires `gogio` installed in `PATH`.
 - Code comments are written in English.
 - `weather_check.py` must not be committed.
 - Local desktop notification delivery is best-effort (`notify-send` on Linux, `osascript` on macOS). Android and Windows backend wiring is still pending.
+- Android GPS uses runtime permission flow. If permission is requested, press the GPS button again after allowing access.

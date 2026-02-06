@@ -8,6 +8,7 @@ test_notification = "Test notification"
 apply_settings = "Apply settings"
 apply_coordinates = "Apply coordinates"
 toggle_notifications = "Toggle notifications"
+get_gps_location = "Get my current location via GPS"
 
 [nav]
 home = "Home"

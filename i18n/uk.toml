@@ -8,6 +8,7 @@ test_notification = "Тест сповіщення"
 apply_settings = "Застосувати налаштування"
 apply_coordinates = "Застосувати координати"
 toggle_notifications = "Перемкнути сповіщення"
+get_gps_location = "Отримати мою поточну GPS-локацію"
 
 [nav]
 home = "Головна"

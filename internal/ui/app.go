@@ -23,6 +23,7 @@ import (
 
 	"github.com/vitovt/wetterabhaengig/internal/data"
 	"github.com/vitovt/wetterabhaengig/internal/domain"
+	"github.com/vitovt/wetterabhaengig/internal/gps"
 	"github.com/vitovt/wetterabhaengig/internal/i18n"
 	"github.com/vitovt/wetterabhaengig/internal/location"
 	"github.com/vitovt/wetterabhaengig/internal/notify"
@@ -43,6 +44,7 @@ type UI struct {
 	theme *material.Theme
 	cfg   domain.AppConfig
 	check *service.Checker
+	gps   gps.Provider
 	ntf   *notify.Notifier
 	store *storage.Store
 	i18n  *i18n.Bundle
@@ -79,6 +81,7 @@ type UI struct {
 	setUnitInHgBtn widget.Clickable
 	setTime24Btn   widget.Clickable
 	setTime12Btn   widget.Clickable
+	getGPSBtn      widget.Clickable
 
 	latEditor        widget.Editor
 	lonEditor        widget.Editor
@@ -120,6 +123,7 @@ func New() *UI {
 		theme:       material.NewTheme(),
 		cfg:         domain.DefaultConfig(),
 		check:       service.NewChecker(data.NewClient(12 * time.Second)),
+		gps:         gps.NewProvider(),
 		ntf:         notify.New(),
 		i18n:        i18n.Load("i18n"),
 		screen:      ScreenHome,
@@ -302,6 +306,9 @@ func (u *UI) handleActions(gtx layout.Context) {
 	for u.setTime12Btn.Clicked(gtx) {
 		u.cfg.Units.TimeFormat = "12h"
 		u.saveState()
+	}
+	for u.getGPSBtn.Clicked(gtx) {
+		u.getCurrentLocationViaGPS()
 	}
 }
 
@@ -958,6 +965,11 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.getGPSBtn, u.tr("buttons.get_gps_location", "Get my current location via GPS"))
+					return btn.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							ed := material.Editor(u.theme, &u.latEditor, "Latitude")
@@ -1157,6 +1169,28 @@ func (u *UI) selectCity(index int) {
 	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
 	u.setStatus(
 		fmt.Sprintf("City selected: %s (%.4f, %.4f)", u.cities[index].Name, u.locationLat, u.locationLon),
+		false,
+	)
+	u.saveState()
+}
+
+func (u *UI) getCurrentLocationViaGPS() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	lat, lon, err := u.gps.CurrentLocation(ctx)
+	if err != nil {
+		u.setStatus(fmt.Sprintf("GPS location unavailable: %v", err), true)
+		return
+	}
+
+	u.locationLat = lat
+	u.locationLon = lon
+	u.selectedCity = -1
+	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
+	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
+	u.setStatus(
+		fmt.Sprintf("GPS location applied: %.4f, %.4f", u.locationLat, u.locationLon),
 		false,
 	)
 	u.saveState()
