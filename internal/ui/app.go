@@ -1122,19 +1122,21 @@ func (u *UI) layoutCityDropdown(gtx layout.Context) layout.Dimensions {
 						if len(filtered) == 0 {
 							return material.Body2(u.theme, "No matching cities").Layout(gtx)
 						}
-						maxHeight := gtx.Dp(unit.Dp(190))
-						gtx.Constraints.Max.Y = maxHeight
-						return u.cityList.Layout(gtx, len(filtered), func(gtx layout.Context, index int) layout.Dimensions {
-							cityIndex := filtered[index]
-							enabledLabel := u.cities[cityIndex].Name
-							if cityIndex == u.selectedCity {
-								enabledLabel = "• " + enabledLabel
-							}
-							return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								btn := material.Button(u.theme, &u.cityButtons[cityIndex], enabledLabel)
+						// Render all filtered options and delegate scrolling to the Settings page list.
+						children := make([]layout.FlexChild, 0, len(filtered)*2)
+						for _, cityIndex := range filtered {
+							idx := cityIndex
+							children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								enabledLabel := u.cities[idx].Name
+								if idx == u.selectedCity {
+									enabledLabel = "• " + enabledLabel
+								}
+								btn := material.Button(u.theme, &u.cityButtons[idx], enabledLabel)
 								return btn.Layout(gtx)
-							})
-						})
+							}))
+							children = append(children, layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout))
+						}
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 					}),
 				)
 			})
