@@ -106,13 +106,13 @@ func syncConfig(cfg domain.AppConfig, lat, lon float64) error {
 			return err
 		}
 
-		enabled := C.JNI_FALSE
+		enabled := C.jboolean(C.JNI_FALSE)
 		if cfg.Schedule.RunWhenClosed {
-			enabled = C.JNI_TRUE
+			enabled = C.jboolean(C.JNI_TRUE)
 		}
-		notifications := C.JNI_FALSE
+		notifications := C.jboolean(C.JNI_FALSE)
 		if cfg.Notifications.Enabled {
-			notifications = C.JNI_TRUE
+			notifications = C.jboolean(C.JNI_TRUE)
 		}
 
 		period := cfg.Schedule.PeriodMinutes
