@@ -1,16 +1,23 @@
 package i18n
 
 import (
+	"embed"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 )
 
+//go:embed locales/*.toml
+var embeddedLocales embed.FS
+
 type Bundle struct {
 	translations map[string]map[string]string
 	available    []string
+	systemLang   string
 }
 
 func Load(dir string) *Bundle {
@@ -18,28 +25,11 @@ func Load(dir string) *Bundle {
 		translations: map[string]map[string]string{},
 	}
 
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return b
+	_ = b.loadDir(dir)
+	if len(b.translations) == 0 {
+		_ = b.loadFS(embeddedLocales, "locales")
 	}
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".toml") {
-			continue
-		}
-		lang := strings.TrimSuffix(entry.Name(), ".toml")
-		path := filepath.Join(dir, entry.Name())
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		b.translations[lang] = parseSimpleTOML(string(raw))
-	}
-
-	for lang := range b.translations {
-		b.available = append(b.available, lang)
-	}
-	sort.Strings(b.available)
+	b.refreshAvailable()
 	return b
 }
 
@@ -50,24 +40,24 @@ func (b *Bundle) AvailableLanguages() []string {
 	return out
 }
 
+func (b *Bundle) SetSystemLanguage(lang string) {
+	b.systemLang = normalizeLanguage(lang)
+}
+
 func (b *Bundle) ResolveLanguage(selected string) string {
 	if selected != "" && selected != "system" {
-		if _, ok := b.translations[selected]; ok {
-			return selected
+		if matched := b.matchLanguage(selected); matched != "" {
+			return matched
 		}
 	}
 
+	if matched := b.matchLanguage(b.systemLang); matched != "" {
+		return matched
+	}
+
 	if env := os.Getenv("LANG"); env != "" {
-		env = strings.ToLower(env)
-		env = strings.SplitN(env, ".", 2)[0]
-		env = strings.ReplaceAll(env, "-", "_")
-		if _, ok := b.translations[env]; ok {
-			return env
-		}
-		if base := strings.SplitN(env, "_", 2)[0]; base != "" {
-			if _, ok := b.translations[base]; ok {
-				return base
-			}
+		if matched := b.matchLanguage(env); matched != "" {
+			return matched
 		}
 	}
 
@@ -93,6 +83,79 @@ func (b *Bundle) Text(selectedLanguage, key, fallback string) string {
 		}
 	}
 	return fallback
+}
+
+func (b *Bundle) loadDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".toml") {
+			continue
+		}
+		lang := strings.TrimSuffix(entry.Name(), ".toml")
+		filePath := filepath.Join(dir, entry.Name())
+		raw, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+		b.translations[lang] = parseSimpleTOML(string(raw))
+	}
+	return nil
+}
+
+func (b *Bundle) loadFS(fsys fs.FS, dir string) error {
+	entries, err := fs.ReadDir(fsys, dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".toml") {
+			continue
+		}
+		lang := strings.TrimSuffix(entry.Name(), ".toml")
+		raw, err := fs.ReadFile(fsys, path.Join(dir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		b.translations[lang] = parseSimpleTOML(string(raw))
+	}
+	return nil
+}
+
+func (b *Bundle) refreshAvailable() {
+	b.available = b.available[:0]
+	for lang := range b.translations {
+		b.available = append(b.available, lang)
+	}
+	sort.Strings(b.available)
+}
+
+func (b *Bundle) matchLanguage(candidate string) string {
+	candidate = normalizeLanguage(candidate)
+	if candidate == "" {
+		return ""
+	}
+	if _, ok := b.translations[candidate]; ok {
+		return candidate
+	}
+	if base := strings.SplitN(candidate, "_", 2)[0]; base != "" {
+		if _, ok := b.translations[base]; ok {
+			return base
+		}
+	}
+	return ""
+}
+
+func normalizeLanguage(raw string) string {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if raw == "" {
+		return ""
+	}
+	raw = strings.SplitN(raw, ".", 2)[0]
+	raw = strings.ReplaceAll(raw, "-", "_")
+	return raw
 }
 
 func parseSimpleTOML(input string) map[string]string {

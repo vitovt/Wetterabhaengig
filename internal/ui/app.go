@@ -108,13 +108,14 @@ type UI struct {
 	kIndexRisk   domain.RiskLevel
 	overallRisk  domain.RiskLevel
 
-	lastCheck          time.Time
-	statusMessage      string
-	statusMessageError bool
-	notificationID     int
-	hasChecked         bool
-	autoCheckPending   bool
-	nextScheduledCheck time.Time
+	lastCheck            time.Time
+	statusMessage        string
+	statusMessageError   bool
+	notificationID       int
+	hasChecked           bool
+	autoCheckPending     bool
+	nextScheduledCheck   time.Time
+	platformLanguageInit bool
 }
 
 func New() *UI {
