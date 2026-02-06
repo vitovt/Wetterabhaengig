@@ -1,0 +1,7 @@
+[app]
+title = "Wetterabhaengig"
+subtitle = "Wetterrisiko-Ueberwachung mit Ampelstatus und numerischem Kontext."
+
+[buttons]
+check_now = "Jetzt pruefen"
+test_notification = "Benachrichtigung testen"

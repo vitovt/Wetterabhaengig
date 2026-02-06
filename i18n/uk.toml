@@ -1,0 +1,7 @@
+[app]
+title = "Wetterabhaengig"
+subtitle = "Monitoring weather risk with traffic light status and numeric context."
+
+[buttons]
+check_now = "Check now"
+test_notification = "Test notification"
