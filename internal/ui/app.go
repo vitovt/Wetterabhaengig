@@ -158,6 +158,7 @@ func New() *UI {
 	u.refreshLanguagesFromBundle()
 	u.loadState()
 	u.refreshLanguagesFromBundle()
+	u.statusMessage = u.tr("status.ready", "Ready. Press Check now to load live data.")
 
 	u.latEditor.SingleLine = true
 	u.lonEditor.SingleLine = true
@@ -259,16 +260,16 @@ func (u *UI) handleActions(gtx layout.Context) {
 		if err := u.syncLocationFromEditors(); err != nil {
 			u.setStatus(err.Error(), true)
 		} else {
-			u.setStatus(fmt.Sprintf("Location updated: %.4f, %.4f", u.locationLat, u.locationLon), false)
+			u.setStatus(u.trf("status.location_updated", "Location updated: %.4f, %.4f", u.locationLat, u.locationLon), false)
 			u.saveState()
 		}
 	}
 	for u.toggleNotifBtn.Clicked(gtx) {
 		u.cfg.Notifications.Enabled = !u.cfg.Notifications.Enabled
 		if u.cfg.Notifications.Enabled {
-			u.setStatus("Notifications enabled.", false)
+			u.setStatus(u.tr("status.notifications_enabled", "Notifications enabled."), false)
 		} else {
-			u.setStatus("Notifications disabled.", false)
+			u.setStatus(u.tr("status.notifications_disabled", "Notifications disabled."), false)
 		}
 		u.saveState()
 	}
@@ -301,7 +302,7 @@ func (u *UI) handleActions(gtx layout.Context) {
 		if err := u.applySettingsFromEditors(); err != nil {
 			u.setStatus(err.Error(), true)
 		} else {
-			u.setStatus("Settings applied.", false)
+			u.setStatus(u.tr("status.settings_applied", "Settings applied."), false)
 		}
 	}
 	for u.setUnitHPaBtn.Clicked(gtx) {
@@ -367,22 +368,29 @@ func (u *UI) runCheck(applyEditorLocation bool, reason string) {
 
 	if err != nil {
 		u.setStatus(
-			fmt.Sprintf("Check (%s) completed with fallback data: %v", reason, err),
+			u.trf("status.check_fallback", "Check (%s) completed with fallback data: %v", u.checkReasonLabel(reason), err),
 			true,
 		)
 	} else {
 		u.setStatus(
-			fmt.Sprintf("Check (%s) completed at %s. Risk=%s.", reason, u.formatTime(result.CheckedAt), result.OverallRisk.String()),
+			u.trf(
+				"status.check_success",
+				"Check (%s) completed at %s. Risk=%s.",
+				u.checkReasonLabel(reason),
+				u.formatTime(result.CheckedAt),
+				u.riskLabel(result.OverallRisk),
+			),
 			false,
 		)
 	}
 
 	if u.cfg.Notifications.Enabled && oldRisk != u.overallRisk && len(u.history) > 1 {
 		u.pushNotification(
-			fmt.Sprintf(
+			u.trf(
+				"notification.state_changed",
 				"State changed: %s -> %s",
-				oldRisk.String(),
-				u.overallRisk.String(),
+				u.riskLabel(oldRisk),
+				u.riskLabel(u.overallRisk),
 			),
 		)
 	}
@@ -394,9 +402,10 @@ func (u *UI) triggerTestNotification() {
 
 func (u *UI) pushNotification(message string) {
 	u.notificationID++
-	if err := u.ntf.Send("Wetterabhaengig", message); err != nil {
+	if err := u.ntf.Send(u.tr("app.title", "Wetterabhaengig"), message); err != nil {
 		u.setStatus(
-			fmt.Sprintf(
+			u.trf(
+				"status.notification_local_error",
 				"Notification #%d (in-app only): %s | local delivery error: %v",
 				u.notificationID,
 				message,
@@ -406,7 +415,7 @@ func (u *UI) pushNotification(message string) {
 		)
 		return
 	}
-	u.setStatus(fmt.Sprintf("Notification #%d sent: %s", u.notificationID, message), false)
+	u.setStatus(u.trf("status.notification_sent", "Notification #%d sent: %s", u.notificationID, message), false)
 }
 
 func (u *UI) recomputeRisk() {
@@ -466,12 +475,12 @@ func (u *UI) isCompactLayout(gtx layout.Context) bool {
 func (u *UI) layoutCompactTopBar(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.menuOpenBtn, "Menu")
+			btn := material.Button(u.theme, &u.menuOpenBtn, u.tr("menu.menu", "Menu"))
 			return btn.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			label := material.Body1(u.theme, fmt.Sprintf("Screen: %s", u.screenName()))
+			label := material.Body1(u.theme, u.trf("menu.screen", "Screen: %s", u.screenName()))
 			label.Color = color.NRGBA{A: 255, R: 90, G: 90, B: 90}
 			return label.Layout(gtx)
 		}),
@@ -511,11 +520,11 @@ func (u *UI) layoutMenuOverlay(gtx layout.Context) layout.Dimensions {
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-										title := material.H6(u.theme, "Navigation")
+										title := material.H6(u.theme, u.tr("menu.navigation", "Navigation"))
 										return title.Layout(gtx)
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										btn := material.Button(u.theme, &u.menuCloseBtn, "Close")
+										btn := material.Button(u.theme, &u.menuCloseBtn, u.tr("menu.close", "Close"))
 										return btn.Layout(gtx)
 									}),
 								)
@@ -599,7 +608,7 @@ func (u *UI) screenName() string {
 	case ScreenTest:
 		return u.tr("nav.test", "Test")
 	default:
-		return "Unknown"
+		return u.tr("common.unknown", "Unknown")
 	}
 }
 
@@ -623,7 +632,7 @@ func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(u.layoutTrafficLight),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			label := material.H6(u.theme, fmt.Sprintf("Overall risk: %s", u.overallRisk.String()))
+			label := material.H6(u.theme, u.trf("home.overall_risk", "Overall risk: %s", u.riskLabel(u.overallRisk)))
 			return label.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -634,7 +643,7 @@ func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			locationLine := material.Body1(
 				u.theme,
-				fmt.Sprintf("Location: %.4f, %.4f", u.locationLat, u.locationLon),
+				u.trf("home.location", "Location: %.4f, %.4f", u.locationLat, u.locationLon),
 			)
 			return locationLine.Layout(gtx)
 		}),
@@ -642,7 +651,7 @@ func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
 			primaryPressure, _ := domain.ConvertPressureDelta(u.metrics.PressureDeltaHPa, u.cfg.Units.PressureUnit)
 			value := material.Body1(
 				u.theme,
-				fmt.Sprintf("Pressure delta: %.2f %s | %.2f hPa | %.2f mmHg | %.2f inHg",
+				u.trf("home.pressure_delta", "Pressure delta: %.2f %s | %.2f hPa | %.2f mmHg | %.2f inHg",
 					primaryPressure,
 					u.cfg.Units.PressureUnit,
 					u.metrics.PressureDeltaHPa,
@@ -655,24 +664,30 @@ func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			value := material.Body1(
 				u.theme,
-				fmt.Sprintf("K-index: %.1f", u.metrics.KIndex),
+				u.trf("home.k_index", "K-index: %.1f", u.metrics.KIndex),
 			)
 			return value.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			value := material.Body1(
 				u.theme,
-				fmt.Sprintf("Source risks: pressure=%s, k-index=%s | Time format: %s", u.pressureRisk.String(), u.kIndexRisk.String(), u.cfg.Units.TimeFormat),
+				u.trf(
+					"home.source_risks",
+					"Source risks: pressure=%s, k-index=%s | Time format: %s",
+					u.riskLabel(u.pressureRisk),
+					u.riskLabel(u.kIndexRisk),
+					u.cfg.Units.TimeFormat,
+				),
 			)
 			return value.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if !u.hasChecked {
-				return material.Body2(u.theme, "Last check: not yet completed").Layout(gtx)
+				return material.Body2(u.theme, u.tr("home.last_check_none", "Last check: not yet completed")).Layout(gtx)
 			}
 			value := material.Body2(
 				u.theme,
-				fmt.Sprintf("Last check: %s", u.formatTime(u.lastCheck)),
+				u.trf("home.last_check", "Last check: %s", u.formatTime(u.lastCheck)),
 			)
 			return value.Layout(gtx)
 		}),
@@ -682,7 +697,7 @@ func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
 			}
 			value := material.Body2(
 				u.theme,
-				fmt.Sprintf("Next scheduled check: %s", u.formatTime(u.nextScheduledCheck)),
+				u.trf("home.next_scheduled", "Next scheduled check: %s", u.formatTime(u.nextScheduledCheck)),
 			)
 			return value.Layout(gtx)
 		}),
@@ -699,7 +714,10 @@ func (u *UI) layoutHistory(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			text := material.Body2(
 				u.theme,
-				"Chart implementation comes next. History rows below already track pressure delta and K-index per check.",
+				u.tr(
+					"history.description",
+					"Chart implementation comes next. History rows below already track pressure delta and K-index per check.",
+				),
 			)
 			return text.Layout(gtx)
 		}),
@@ -708,14 +726,15 @@ func (u *UI) layoutHistory(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			if len(u.history) == 0 {
-				return material.Body1(u.theme, "No history yet. Run Check now.").Layout(gtx)
+				return material.Body1(u.theme, u.tr("history.none", "No history yet. Run Check now.")).Layout(gtx)
 			}
 			return u.historyList.Layout(gtx, len(u.history), func(gtx layout.Context, index int) layout.Dimensions {
 				item := u.history[len(u.history)-1-index]
-				line := fmt.Sprintf(
+				line := u.trf(
+					"history.row",
 					"%s | risk=%s | delta=%.2f hPa | K=%.1f",
 					u.formatTime(item.CheckedAt),
-					item.OverallRisk.String(),
+					u.riskLabel(item.OverallRisk),
 					item.PressureDeltaHPa,
 					item.KIndex,
 				)
@@ -828,9 +847,9 @@ func drawLine(gtx layout.Context, x1, y1, x2, y2, width float32, col color.NRGBA
 }
 
 func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
-	notificationState := "ON"
+	notificationState := u.tr("common.on", "ON")
 	if !u.cfg.Notifications.Enabled {
-		notificationState = "OFF"
+		notificationState = u.tr("common.off", "OFF")
 	}
 
 	return u.settingsList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
@@ -845,23 +864,23 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					txt := material.Body1(u.theme, "Risk thresholds (editable)")
+					txt := material.Body1(u.theme, u.tr("settings.risk_thresholds", "Risk thresholds (editable)"))
 					return txt.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							ed := material.Editor(u.theme, &u.setPressureMediumEditor, "Pressure medium")
+							ed := material.Editor(u.theme, &u.setPressureMediumEditor, u.tr("settings.pressure_medium", "Pressure medium"))
 							return ed.Layout(gtx)
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							ed := material.Editor(u.theme, &u.setPressureHighEditor, "Pressure high")
+							ed := material.Editor(u.theme, &u.setPressureHighEditor, u.tr("settings.pressure_high", "Pressure high"))
 							return ed.Layout(gtx)
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							ed := material.Editor(u.theme, &u.setPressureCritEditor, "Pressure critical")
+							ed := material.Editor(u.theme, &u.setPressureCritEditor, u.tr("settings.pressure_critical", "Pressure critical"))
 							return ed.Layout(gtx)
 						}),
 					)
@@ -869,17 +888,17 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							ed := material.Editor(u.theme, &u.setKMediumEditor, "K medium")
+							ed := material.Editor(u.theme, &u.setKMediumEditor, u.tr("settings.k_medium", "K medium"))
 							return ed.Layout(gtx)
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							ed := material.Editor(u.theme, &u.setKHighEditor, "K high")
+							ed := material.Editor(u.theme, &u.setKHighEditor, u.tr("settings.k_high", "K high"))
 							return ed.Layout(gtx)
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							ed := material.Editor(u.theme, &u.setKCritEditor, "K critical")
+							ed := material.Editor(u.theme, &u.setKCritEditor, u.tr("settings.k_critical", "K critical"))
 							return ed.Layout(gtx)
 						}),
 					)
@@ -887,14 +906,26 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					txt := material.Body1(
 						u.theme,
-						fmt.Sprintf("Current pressure: medium>%.1f, high>%.1f, critical>%.1f", u.cfg.Pressure.Medium, u.cfg.Pressure.High, u.cfg.Pressure.Crit),
+						u.trf(
+							"settings.current_pressure",
+							"Current pressure: medium>%.1f, high>%.1f, critical>%.1f",
+							u.cfg.Pressure.Medium,
+							u.cfg.Pressure.High,
+							u.cfg.Pressure.Crit,
+						),
 					)
 					return txt.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					txt := material.Body1(
 						u.theme,
-						fmt.Sprintf("Current K-index: medium>=%.1f, high>=%.1f, critical>=%.1f", u.cfg.KIndex.Medium, u.cfg.KIndex.High, u.cfg.KIndex.Crit),
+						u.trf(
+							"settings.current_kindex",
+							"Current K-index: medium>=%.1f, high>=%.1f, critical>=%.1f",
+							u.cfg.KIndex.Medium,
+							u.cfg.KIndex.High,
+							u.cfg.KIndex.Crit,
+						),
 					)
 					return txt.Layout(gtx)
 				}),
@@ -902,19 +933,24 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					txt := material.Body1(
 						u.theme,
-						fmt.Sprintf("Schedule period min (>= %d) and retention days (max %d years)", u.cfg.Schedule.MinMinutes, u.cfg.Retention.MaxYears),
+						u.trf(
+							"settings.schedule_info",
+							"Schedule period min (>= %d) and retention days (max %d years)",
+							u.cfg.Schedule.MinMinutes,
+							u.cfg.Retention.MaxYears,
+						),
 					)
 					return txt.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							ed := material.Editor(u.theme, &u.setScheduleEditor, "Schedule minutes")
+							ed := material.Editor(u.theme, &u.setScheduleEditor, u.tr("settings.schedule_minutes", "Schedule minutes"))
 							return ed.Layout(gtx)
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							ed := material.Editor(u.theme, &u.setRetentionDaysEditor, "Retention days")
+							ed := material.Editor(u.theme, &u.setRetentionDaysEditor, u.tr("settings.retention_days", "Retention days"))
 							return ed.Layout(gtx)
 						}),
 					)
@@ -946,7 +982,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					txt := material.Body1(u.theme, fmt.Sprintf("Pressure unit: %s", u.cfg.Units.PressureUnit))
+					txt := material.Body1(u.theme, u.trf("settings.pressure_unit", "Pressure unit: %s", u.cfg.Units.PressureUnit))
 					return txt.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
@@ -970,7 +1006,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					txt := material.Body1(u.theme, fmt.Sprintf("Time format: %s", u.cfg.Units.TimeFormat))
+					txt := material.Body1(u.theme, u.trf("settings.time_format", "Time format: %s", u.cfg.Units.TimeFormat))
 					return txt.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -988,7 +1024,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					txt := material.Body1(u.theme, "Location coordinates")
+					txt := material.Body1(u.theme, u.tr("settings.location_coordinates", "Location coordinates"))
 					return txt.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
@@ -1000,12 +1036,12 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							ed := material.Editor(u.theme, &u.latEditor, "Latitude")
+							ed := material.Editor(u.theme, &u.latEditor, u.tr("settings.latitude", "Latitude"))
 							return ed.Layout(gtx)
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							ed := material.Editor(u.theme, &u.lonEditor, "Longitude")
+							ed := material.Editor(u.theme, &u.lonEditor, u.tr("settings.longitude", "Longitude"))
 							return ed.Layout(gtx)
 						}),
 					)
@@ -1042,7 +1078,7 @@ func (u *UI) layoutTest(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(u.theme, "Manual test tools for current notification payload.")
+			txt := material.Body1(u.theme, u.tr("test.manual_tools", "Manual test tools for current notification payload."))
 			return txt.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
@@ -1053,7 +1089,7 @@ func (u *UI) layoutTest(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			txt := material.Body2(
 				u.theme,
-				"This action must immediately create a local notification once platform notification backends are added.",
+				u.tr("test.action_note", "This action must immediately create a local notification once platform notification backends are added."),
 			)
 			return txt.Layout(gtx)
 		}),
@@ -1107,24 +1143,27 @@ func (u *UI) trafficLightColor() color.NRGBA {
 }
 
 func (u *UI) currentNotificationText() string {
-	outOfRange := "none"
+	outOfRange := u.tr("notification.out_none", "none")
 	if u.pressureRisk >= u.kIndexRisk && u.pressureRisk != domain.RiskLow {
-		outOfRange = fmt.Sprintf(
+		outOfRange = u.trf(
+			"notification.out_pressure",
 			"pressure delta %.2f hPa (>%.1f)",
 			u.metrics.PressureDeltaHPa,
 			thresholdLabel(u.pressureRisk, u.cfg.Pressure),
 		)
 	} else if u.kIndexRisk != domain.RiskLow {
-		outOfRange = fmt.Sprintf(
+		outOfRange = u.trf(
+			"notification.out_kindex",
 			"k-index %.1f (>=%.1f)",
 			u.metrics.KIndex,
 			thresholdLabelK(u.kIndexRisk, u.cfg.KIndex),
 		)
 	}
 
-	return fmt.Sprintf(
+	return u.trf(
+		"notification.payload",
 		"Risk: %s. Pressure delta %.2f hPa. K-index %.1f. Out of range: %s. Location: %.4f, %.4f.",
-		u.overallRisk.String(),
+		u.riskLabel(u.overallRisk),
 		u.metrics.PressureDeltaHPa,
 		u.metrics.KIndex,
 		outOfRange,
@@ -1138,11 +1177,11 @@ func (u *UI) layoutCityDropdown(gtx layout.Context) layout.Dimensions {
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			label := fmt.Sprintf("City: %s", u.currentCityName())
+			label := u.trf("settings.city", "City: %s", u.currentCityName())
 			if u.cityDropdownOpen {
-				label = "City: " + u.currentCityName() + " ▲"
+				label = u.trf("settings.city", "City: %s", u.currentCityName()) + " ▲"
 			} else {
-				label = "City: " + u.currentCityName() + " ▼"
+				label = u.trf("settings.city", "City: %s", u.currentCityName()) + " ▼"
 			}
 			btn := material.Button(u.theme, &u.cityToggleBtn, label)
 			return btn.Layout(gtx)
@@ -1154,13 +1193,13 @@ func (u *UI) layoutCityDropdown(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						ed := material.Editor(u.theme, &u.citySearchEditor, "Search city (case-insensitive)")
+						ed := material.Editor(u.theme, &u.citySearchEditor, u.tr("settings.search_city", "Search city (case-insensitive)"))
 						return ed.Layout(gtx)
 					}),
 					layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if len(filtered) == 0 {
-							return material.Body2(u.theme, "No matching cities").Layout(gtx)
+							return material.Body2(u.theme, u.tr("settings.no_city_match", "No matching cities")).Layout(gtx)
 						}
 						// Render all filtered options and delegate scrolling to the Settings page list.
 						children := make([]layout.FlexChild, 0, len(filtered)*2)
@@ -1252,7 +1291,7 @@ func (u *UI) selectCity(index int) {
 	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
 	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
 	u.setStatus(
-		fmt.Sprintf("City selected: %s (%.4f, %.4f)", u.cities[index].Name, u.locationLat, u.locationLon),
+		u.trf("status.city_selected", "City selected: %s (%.4f, %.4f)", u.cities[index].Name, u.locationLat, u.locationLon),
 		false,
 	)
 	u.saveState()
@@ -1263,7 +1302,7 @@ func (u *UI) selectLanguage(language string) {
 		language = "system"
 	}
 	if !containsString(u.cfg.Languages, language) {
-		u.setStatus(fmt.Sprintf("Unknown language: %s", language), true)
+		u.setStatus(u.trf("status.unknown_language", "Unknown language: %s", language), true)
 		return
 	}
 	if u.cfg.Language == language {
@@ -1274,7 +1313,7 @@ func (u *UI) selectLanguage(language string) {
 	u.languageSearchEditor.SetText("")
 	u.saveState()
 	u.setStatus(
-		fmt.Sprintf("Language switched to: %s", u.languageDisplayName(language)),
+		u.trf("status.language_switched", "Language switched to: %s", u.languageDisplayName(language)),
 		false,
 	)
 }
@@ -1285,7 +1324,7 @@ func (u *UI) getCurrentLocationViaGPS() {
 
 	lat, lon, err := u.gps.CurrentLocation(ctx)
 	if err != nil {
-		u.setStatus(fmt.Sprintf("GPS location unavailable: %v", err), true)
+		u.setStatus(u.trf("status.gps_unavailable", "GPS location unavailable: %v", err), true)
 		return
 	}
 
@@ -1295,7 +1334,7 @@ func (u *UI) getCurrentLocationViaGPS() {
 	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
 	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
 	u.setStatus(
-		fmt.Sprintf("GPS location applied: %.4f, %.4f", u.locationLat, u.locationLon),
+		u.trf("status.gps_applied", "GPS location applied: %.4f, %.4f", u.locationLat, u.locationLon),
 		false,
 	)
 	u.saveState()
@@ -1306,17 +1345,17 @@ func (u *UI) syncLocationFromEditors() error {
 	lonText := strings.TrimSpace(u.lonEditor.Text())
 	lat, err := strconv.ParseFloat(latText, 64)
 	if err != nil {
-		return fmt.Errorf("invalid latitude: %q", latText)
+		return fmt.Errorf(u.tr("error.invalid_latitude", "invalid latitude: %q"), latText)
 	}
 	lon, err := strconv.ParseFloat(lonText, 64)
 	if err != nil {
-		return fmt.Errorf("invalid longitude: %q", lonText)
+		return fmt.Errorf(u.tr("error.invalid_longitude", "invalid longitude: %q"), lonText)
 	}
 	if lat < -90 || lat > 90 {
-		return fmt.Errorf("latitude must be in [-90, 90]")
+		return errors.New(u.tr("error.latitude_range", "latitude must be in [-90, 90]"))
 	}
 	if lon < -180 || lon > 180 {
-		return fmt.Errorf("longitude must be in [-180, 180]")
+		return errors.New(u.tr("error.longitude_range", "longitude must be in [-180, 180]"))
 	}
 
 	u.locationLat = lat
@@ -1326,7 +1365,7 @@ func (u *UI) syncLocationFromEditors() error {
 
 func (u *UI) currentCityName() string {
 	if u.selectedCity < 0 || u.selectedCity >= len(u.cities) {
-		return "custom"
+		return u.tr("settings.custom_city", "custom")
 	}
 	return u.cities[u.selectedCity].Name
 }
@@ -1368,9 +1407,11 @@ func (u *UI) refreshLanguagesFromBundle() {
 	lang := strings.TrimSpace(u.cfg.Language)
 	if lang == "" {
 		u.cfg.Language = "system"
+		u.syncLanguageButtons()
 		return
 	}
 	if lang == "system" {
+		u.syncLanguageButtons()
 		return
 	}
 	for _, candidate := range u.cfg.Languages {
@@ -1388,6 +1429,10 @@ func (u *UI) tr(key, fallback string) string {
 		return fallback
 	}
 	return u.i18n.Text(u.cfg.Language, key, fallback)
+}
+
+func (u *UI) trf(key, fallback string, args ...any) string {
+	return fmt.Sprintf(u.tr(key, fallback), args...)
 }
 
 func (u *UI) initSettingsEditors() {
@@ -1418,35 +1463,35 @@ func (u *UI) initSettingsEditors() {
 func (u *UI) applySettingsFromEditors() error {
 	cfg := u.cfg
 
-	pressureMedium, err := parseFloatEditor(&u.setPressureMediumEditor, "pressure medium")
+	pressureMedium, err := u.parseFloatEditor(&u.setPressureMediumEditor, u.tr("settings.pressure_medium", "Pressure medium"))
 	if err != nil {
 		return err
 	}
-	pressureHigh, err := parseFloatEditor(&u.setPressureHighEditor, "pressure high")
+	pressureHigh, err := u.parseFloatEditor(&u.setPressureHighEditor, u.tr("settings.pressure_high", "Pressure high"))
 	if err != nil {
 		return err
 	}
-	pressureCrit, err := parseFloatEditor(&u.setPressureCritEditor, "pressure critical")
+	pressureCrit, err := u.parseFloatEditor(&u.setPressureCritEditor, u.tr("settings.pressure_critical", "Pressure critical"))
 	if err != nil {
 		return err
 	}
-	kMedium, err := parseFloatEditor(&u.setKMediumEditor, "k-index medium")
+	kMedium, err := u.parseFloatEditor(&u.setKMediumEditor, u.tr("settings.k_medium", "K medium"))
 	if err != nil {
 		return err
 	}
-	kHigh, err := parseFloatEditor(&u.setKHighEditor, "k-index high")
+	kHigh, err := u.parseFloatEditor(&u.setKHighEditor, u.tr("settings.k_high", "K high"))
 	if err != nil {
 		return err
 	}
-	kCrit, err := parseFloatEditor(&u.setKCritEditor, "k-index critical")
+	kCrit, err := u.parseFloatEditor(&u.setKCritEditor, u.tr("settings.k_critical", "K critical"))
 	if err != nil {
 		return err
 	}
-	scheduleMinutes, err := parseIntEditor(&u.setScheduleEditor, "schedule period")
+	scheduleMinutes, err := u.parseIntEditor(&u.setScheduleEditor, u.tr("settings.schedule_minutes", "Schedule minutes"))
 	if err != nil {
 		return err
 	}
-	retentionDays, err := parseIntEditor(&u.setRetentionDaysEditor, "retention days")
+	retentionDays, err := u.parseIntEditor(&u.setRetentionDaysEditor, u.tr("settings.retention_days", "Retention days"))
 	if err != nil {
 		return err
 	}
@@ -1467,7 +1512,7 @@ func (u *UI) applySettingsFromEditors() error {
 		cfg.Language = "system"
 	}
 	if cfg.Language != "system" && !containsString(cfg.Languages, cfg.Language) {
-		return fmt.Errorf("unknown language code: %s", cfg.Language)
+		return fmt.Errorf(u.tr("error.unknown_language_code", "unknown language code: %s"), cfg.Language)
 	}
 
 	if err := domain.ValidateConfig(cfg); err != nil {
@@ -1537,7 +1582,7 @@ func (u *UI) loadState() {
 	state, err := u.store.Load()
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			u.setStatus(fmt.Sprintf("State load error: %v", err), true)
+			u.setStatus(u.trf("status.state_load_error", "State load error: %v", err), true)
 		}
 		return
 	}
@@ -1614,20 +1659,20 @@ func defaultLocationIndex(selected location.City, cities []location.City) int {
 	return 0
 }
 
-func parseFloatEditor(editor *widget.Editor, label string) (float64, error) {
+func (u *UI) parseFloatEditor(editor *widget.Editor, label string) (float64, error) {
 	raw := strings.TrimSpace(editor.Text())
 	value, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid %s: %q", label, raw)
+		return 0, fmt.Errorf(u.tr("error.invalid_value", "invalid %s: %q"), label, raw)
 	}
 	return value, nil
 }
 
-func parseIntEditor(editor *widget.Editor, label string) (int, error) {
+func (u *UI) parseIntEditor(editor *widget.Editor, label string) (int, error) {
 	raw := strings.TrimSpace(editor.Text())
 	value, err := strconv.Atoi(raw)
 	if err != nil {
-		return 0, fmt.Errorf("invalid %s: %q", label, raw)
+		return 0, fmt.Errorf(u.tr("error.invalid_value", "invalid %s: %q"), label, raw)
 	}
 	return value, nil
 }
@@ -1662,21 +1707,49 @@ func (u *UI) languageDisplayName(code string) string {
 	switch code {
 	case "system":
 		if u.i18n == nil {
-			return "System default"
+			return u.tr("settings.system_default", "System default")
 		}
 		resolved := u.i18n.ResolveLanguage("system")
 		return fmt.Sprintf("%s (%s)", u.tr("settings.system_default", "System default"), strings.ToUpper(resolved))
 	case "en":
-		return "English"
+		return u.tr("settings.lang_en", "English")
 	case "de":
-		return "Deutsch"
+		return u.tr("settings.lang_de", "Deutsch")
 	case "uk":
-		return "Ukrainian"
+		return u.tr("settings.lang_uk", "Ukrainian")
 	default:
 		if code == "" {
-			return "System default"
+			return u.tr("settings.system_default", "System default")
 		}
 		return strings.ToUpper(code)
+	}
+}
+
+func (u *UI) riskLabel(level domain.RiskLevel) string {
+	switch level {
+	case domain.RiskLow:
+		return u.tr("risk.low", "LOW")
+	case domain.RiskMedium:
+		return u.tr("risk.medium", "MEDIUM")
+	case domain.RiskHigh:
+		return u.tr("risk.high", "HIGH")
+	case domain.RiskCritical:
+		return u.tr("risk.critical", "CRITICAL")
+	default:
+		return u.tr("risk.unknown", "UNKNOWN")
+	}
+}
+
+func (u *UI) checkReasonLabel(reason string) string {
+	switch reason {
+	case "startup":
+		return u.tr("check_reason.startup", "startup")
+	case "scheduled":
+		return u.tr("check_reason.scheduled", "scheduled")
+	case "manual":
+		return u.tr("check_reason.manual", "manual")
+	default:
+		return reason
 	}
 }
 

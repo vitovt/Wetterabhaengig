@@ -16,6 +16,49 @@ history = "Verlauf"
 settings = "Einstellungen"
 test = "Test"
 
+[menu]
+menu = "Menue"
+screen = "Ansicht: %s"
+navigation = "Navigation"
+close = "Schliessen"
+
+[common]
+unknown = "Unbekannt"
+on = "AN"
+off = "AUS"
+
+[status]
+ready = "Bereit. Druecke Jetzt pruefen, um Live-Daten zu laden."
+location_updated = "Standort aktualisiert: %.4f, %.4f"
+notifications_enabled = "Benachrichtigungen aktiviert."
+notifications_disabled = "Benachrichtigungen deaktiviert."
+settings_applied = "Einstellungen angewendet."
+check_fallback = "Pruefung (%s) mit Ersatzdaten abgeschlossen: %v"
+check_success = "Pruefung (%s) um %s abgeschlossen. Risiko=%s."
+notification_local_error = "Benachrichtigung #%d (nur in der App): %s | lokaler Fehler: %v"
+notification_sent = "Benachrichtigung #%d gesendet: %s"
+city_selected = "Stadt ausgewaehlt: %s (%.4f, %.4f)"
+unknown_language = "Unbekannte Sprache: %s"
+language_switched = "Sprache gewechselt zu: %s"
+gps_unavailable = "GPS-Standort nicht verfuegbar: %v"
+gps_applied = "GPS-Standort uebernommen: %.4f, %.4f"
+state_load_error = "Fehler beim Laden des Status: %v"
+
+[home]
+overall_risk = "Gesamtrisiko: %s"
+location = "Standort: %.4f, %.4f"
+pressure_delta = "Druckaenderung: %.2f %s | %.2f hPa | %.2f mmHg | %.2f inHg"
+k_index = "K-Index: %.1f"
+source_risks = "Quellrisiken: Druck=%s, K-Index=%s | Zeitformat: %s"
+last_check_none = "Letzte Pruefung: noch nicht ausgefuehrt"
+last_check = "Letzte Pruefung: %s"
+next_scheduled = "Naechste geplante Pruefung: %s"
+
+[history]
+description = "Die Diagramm-Implementierung folgt. Die Verlaufseintraege unten enthalten bereits Druckaenderung und K-Index pro Pruefung."
+none = "Noch kein Verlauf. Fuehre Jetzt pruefen aus."
+row = "%s | Risiko=%s | Delta=%.2f hPa | K=%.1f"
+
 [settings]
 language = "Sprache"
 current_language = "Aktuelle Sprache"
@@ -23,3 +66,58 @@ system_default = "Systemstandard"
 no_languages = "Keine Sprachen gefunden"
 search_language = "Sprache suchen"
 no_language_match = "Keine passenden Sprachen"
+risk_thresholds = "Risikoschwellwerte (bearbeitbar)"
+pressure_medium = "Druck mittel"
+pressure_high = "Druck hoch"
+pressure_critical = "Druck kritisch"
+k_medium = "K mittel"
+k_high = "K hoch"
+k_critical = "K kritisch"
+current_pressure = "Aktueller Druck: mittel>%.1f, hoch>%.1f, kritisch>%.1f"
+current_kindex = "Aktueller K-Index: mittel>=%.1f, hoch>=%.1f, kritisch>=%.1f"
+schedule_info = "Intervall min (>= %d) und Aufbewahrungstage (max %d Jahre)"
+schedule_minutes = "Intervall in Minuten"
+retention_days = "Aufbewahrungstage"
+pressure_unit = "Druckeinheit: %s"
+time_format = "Zeitformat: %s"
+location_coordinates = "Standortkoordinaten"
+latitude = "Breitengrad"
+longitude = "Laengengrad"
+city = "Stadt: %s"
+search_city = "Stadt suchen (ohne Gross/Kleinschreibung)"
+no_city_match = "Keine passenden Staedte"
+custom_city = "benutzerdefiniert"
+lang_en = "Englisch"
+lang_de = "Deutsch"
+lang_uk = "Ukrainisch"
+
+[test]
+manual_tools = "Manuelle Testwerkzeuge fuer die aktuelle Benachrichtigungsnutzlast."
+action_note = "Diese Aktion muss sofort eine lokale Benachrichtigung erzeugen, sobald Plattform-Backends verfuegbar sind."
+
+[notification]
+state_changed = "Status geaendert: %s -> %s"
+out_none = "keine"
+out_pressure = "Druckaenderung %.2f hPa (>%.1f)"
+out_kindex = "K-Index %.1f (>=%.1f)"
+payload = "Risiko: %s. Druckaenderung %.2f hPa. K-Index %.1f. Ausserhalb: %s. Standort: %.4f, %.4f."
+
+[error]
+invalid_latitude = "ungueltiger Breitengrad: %q"
+invalid_longitude = "ungueltiger Laengengrad: %q"
+latitude_range = "Breitengrad muss in [-90, 90] liegen"
+longitude_range = "Laengengrad muss in [-180, 180] liegen"
+unknown_language_code = "unbekannter Sprachcode: %s"
+invalid_value = "ungueltiger Wert fuer %s: %q"
+
+[risk]
+low = "NIEDRIG"
+medium = "MITTEL"
+high = "HOCH"
+critical = "KRITISCH"
+unknown = "UNBEKANNT"
+
+[check_reason]
+startup = "Start"
+scheduled = "geplant"
+manual = "manuell"

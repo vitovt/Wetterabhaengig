@@ -16,6 +16,49 @@ history = "Історія"
 settings = "Налаштування"
 test = "Тест"
 
+[menu]
+menu = "Меню"
+screen = "Екран: %s"
+navigation = "Навігація"
+close = "Закрити"
+
+[common]
+unknown = "Невідомо"
+on = "УВІМК"
+off = "ВИМК"
+
+[status]
+ready = "Готово. Натисніть «Перевірити зараз», щоб завантажити актуальні дані."
+location_updated = "Локацію оновлено: %.4f, %.4f"
+notifications_enabled = "Сповіщення увімкнено."
+notifications_disabled = "Сповіщення вимкнено."
+settings_applied = "Налаштування застосовано."
+check_fallback = "Перевірку (%s) завершено з резервними даними: %v"
+check_success = "Перевірку (%s) завершено о %s. Ризик=%s."
+notification_local_error = "Сповіщення #%d (лише в застосунку): %s | локальна помилка: %v"
+notification_sent = "Сповіщення #%d надіслано: %s"
+city_selected = "Вибрано місто: %s (%.4f, %.4f)"
+unknown_language = "Невідома мова: %s"
+language_switched = "Мову змінено на: %s"
+gps_unavailable = "GPS-локація недоступна: %v"
+gps_applied = "GPS-локацію застосовано: %.4f, %.4f"
+state_load_error = "Помилка завантаження стану: %v"
+
+[home]
+overall_risk = "Загальний ризик: %s"
+location = "Локація: %.4f, %.4f"
+pressure_delta = "Зміна тиску: %.2f %s | %.2f hPa | %.2f mmHg | %.2f inHg"
+k_index = "K-індекс: %.1f"
+source_risks = "Ризики джерел: тиск=%s, K-індекс=%s | Формат часу: %s"
+last_check_none = "Остання перевірка: ще не виконувалась"
+last_check = "Остання перевірка: %s"
+next_scheduled = "Наступна запланована перевірка: %s"
+
+[history]
+description = "Графік буде додано далі. Рядки історії нижче вже містять зміну тиску та K-індекс для кожної перевірки."
+none = "Історія порожня. Запустіть «Перевірити зараз»."
+row = "%s | ризик=%s | дельта=%.2f hPa | K=%.1f"
+
 [settings]
 language = "Мова"
 current_language = "Поточна мова"
@@ -23,3 +66,58 @@ system_default = "Системна за замовчуванням"
 no_languages = "Мови не знайдено"
 search_language = "Пошук мови"
 no_language_match = "Немає відповідних мов"
+risk_thresholds = "Пороги ризику (можна редагувати)"
+pressure_medium = "Тиск середній"
+pressure_high = "Тиск високий"
+pressure_critical = "Тиск критичний"
+k_medium = "K середній"
+k_high = "K високий"
+k_critical = "K критичний"
+current_pressure = "Поточний тиск: середній>%.1f, високий>%.1f, критичний>%.1f"
+current_kindex = "Поточний K-індекс: середній>=%.1f, високий>=%.1f, критичний>=%.1f"
+schedule_info = "Інтервал хв (>= %d) і дні зберігання (макс %d років)"
+schedule_minutes = "Інтервал у хвилинах"
+retention_days = "Дні зберігання"
+pressure_unit = "Одиниця тиску: %s"
+time_format = "Формат часу: %s"
+location_coordinates = "Координати локації"
+latitude = "Широта"
+longitude = "Довгота"
+city = "Місто: %s"
+search_city = "Пошук міста (без урахування регістру)"
+no_city_match = "Немає відповідних міст"
+custom_city = "власна"
+lang_en = "Англійська"
+lang_de = "Німецька"
+lang_uk = "Українська"
+
+[test]
+manual_tools = "Ручні інструменти тестування для поточного payload сповіщення."
+action_note = "Ця дія повинна одразу створити локальне сповіщення, щойно додано платформені бекенди сповіщень."
+
+[notification]
+state_changed = "Стан змінено: %s -> %s"
+out_none = "немає"
+out_pressure = "зміна тиску %.2f hPa (>%.1f)"
+out_kindex = "K-індекс %.1f (>=%.1f)"
+payload = "Ризик: %s. Зміна тиску %.2f hPa. K-індекс %.1f. Поза нормою: %s. Локація: %.4f, %.4f."
+
+[error]
+invalid_latitude = "некоректна широта: %q"
+invalid_longitude = "некоректна довгота: %q"
+latitude_range = "широта має бути в діапазоні [-90, 90]"
+longitude_range = "довгота має бути в діапазоні [-180, 180]"
+unknown_language_code = "невідомий код мови: %s"
+invalid_value = "некоректне значення для %s: %q"
+
+[risk]
+low = "НИЗЬКИЙ"
+medium = "СЕРЕДНІЙ"
+high = "ВИСОКИЙ"
+critical = "КРИТИЧНИЙ"
+unknown = "НЕВІДОМИЙ"
+
+[check_reason]
+startup = "старт"
+scheduled = "за розкладом"
+manual = "вручну"
