@@ -86,8 +86,9 @@ type UI struct {
 	locationLon    float64
 	applyCoordsBtn widget.Clickable
 
-	history     []service.Result
-	historyList layout.List
+	history      []service.Result
+	historyList  layout.List
+	settingsList layout.List
 
 	metrics      domain.Metrics
 	pressureRisk domain.RiskLevel
@@ -124,6 +125,9 @@ func New() *UI {
 		locationLat:  defaultLocation.Lat,
 		locationLon:  defaultLocation.Lon,
 		historyList: layout.List{
+			Axis: layout.Vertical,
+		},
+		settingsList: layout.List{
 			Axis: layout.Vertical,
 		},
 		metrics: domain.Metrics{
@@ -697,190 +701,197 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 		notificationState = "OFF"
 	}
 
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			title := material.H6(u.theme, u.tr("nav.settings", "Settings"))
-			return title.Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(u.theme, "Risk thresholds (editable)")
-			return txt.Layout(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					ed := material.Editor(u.theme, &u.setPressureMediumEditor, "Pressure medium")
+	return u.settingsList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+		content := gtx
+		content.Constraints.Min.Y = 0
+		content.Constraints.Max.Y = 1_000_000
+		return layout.Inset{Bottom: unit.Dp(12)}.Layout(content, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					title := material.H6(u.theme, u.tr("nav.settings", "Settings"))
+					return title.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body1(u.theme, "Risk thresholds (editable)")
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							ed := material.Editor(u.theme, &u.setPressureMediumEditor, "Pressure medium")
+							return ed.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							ed := material.Editor(u.theme, &u.setPressureHighEditor, "Pressure high")
+							return ed.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							ed := material.Editor(u.theme, &u.setPressureCritEditor, "Pressure critical")
+							return ed.Layout(gtx)
+						}),
+					)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							ed := material.Editor(u.theme, &u.setKMediumEditor, "K medium")
+							return ed.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							ed := material.Editor(u.theme, &u.setKHighEditor, "K high")
+							return ed.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							ed := material.Editor(u.theme, &u.setKCritEditor, "K critical")
+							return ed.Layout(gtx)
+						}),
+					)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body1(
+						u.theme,
+						fmt.Sprintf("Current pressure: medium>%.1f, high>%.1f, critical>%.1f", u.cfg.Pressure.Medium, u.cfg.Pressure.High, u.cfg.Pressure.Crit),
+					)
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body1(
+						u.theme,
+						fmt.Sprintf("Current K-index: medium>=%.1f, high>=%.1f, critical>=%.1f", u.cfg.KIndex.Medium, u.cfg.KIndex.High, u.cfg.KIndex.Crit),
+					)
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body1(
+						u.theme,
+						fmt.Sprintf("Schedule period min (>= %d) and retention days (max %d years)", u.cfg.Schedule.MinMinutes, u.cfg.Retention.MaxYears),
+					)
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							ed := material.Editor(u.theme, &u.setScheduleEditor, "Schedule minutes")
+							return ed.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							ed := material.Editor(u.theme, &u.setRetentionDaysEditor, "Retention days")
+							return ed.Layout(gtx)
+						}),
+					)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					ed := material.Editor(u.theme, &u.setLanguageEditor, "Language code (system, en, de, uk)")
 					return ed.Layout(gtx)
 				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					ed := material.Editor(u.theme, &u.setPressureHighEditor, "Pressure high")
-					return ed.Layout(gtx)
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body2(u.theme, fmt.Sprintf("Available language codes: %v", u.cfg.Languages))
+					return txt.Layout(gtx)
 				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					ed := material.Editor(u.theme, &u.setPressureCritEditor, "Pressure critical")
-					return ed.Layout(gtx)
-				}),
-			)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					ed := material.Editor(u.theme, &u.setKMediumEditor, "K medium")
-					return ed.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					ed := material.Editor(u.theme, &u.setKHighEditor, "K high")
-					return ed.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					ed := material.Editor(u.theme, &u.setKCritEditor, "K critical")
-					return ed.Layout(gtx)
-				}),
-			)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(
-				u.theme,
-				fmt.Sprintf("Current pressure: medium>%.1f, high>%.1f, critical>%.1f", u.cfg.Pressure.Medium, u.cfg.Pressure.High, u.cfg.Pressure.Crit),
-			)
-			return txt.Layout(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(
-				u.theme,
-				fmt.Sprintf("Current K-index: medium>=%.1f, high>=%.1f, critical>=%.1f", u.cfg.KIndex.Medium, u.cfg.KIndex.High, u.cfg.KIndex.Crit),
-			)
-			return txt.Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(
-				u.theme,
-				fmt.Sprintf("Schedule period min (>= %d) and retention days (max %d years)", u.cfg.Schedule.MinMinutes, u.cfg.Retention.MaxYears),
-			)
-			return txt.Layout(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					ed := material.Editor(u.theme, &u.setScheduleEditor, "Schedule minutes")
-					return ed.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					ed := material.Editor(u.theme, &u.setRetentionDaysEditor, "Retention days")
-					return ed.Layout(gtx)
-				}),
-			)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			ed := material.Editor(u.theme, &u.setLanguageEditor, "Language code (system, en, de, uk)")
-			return ed.Layout(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body2(u.theme, fmt.Sprintf("Available language codes: %v", u.cfg.Languages))
-			return txt.Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.applySettingsBtn, u.tr("buttons.apply_settings", "Apply settings"))
-			return btn.Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(u.theme, fmt.Sprintf("Pressure unit: %s", u.cfg.Units.PressureUnit))
-			return txt.Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.setUnitHPaBtn, selectedLabel(u.cfg.Units.PressureUnit == "hPa", "hPa"))
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.applySettingsBtn, u.tr("buttons.apply_settings", "Apply settings"))
 					return btn.Layout(gtx)
 				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.setUnitMMHgBtn, selectedLabel(u.cfg.Units.PressureUnit == "mmHg", "mmHg"))
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body1(u.theme, fmt.Sprintf("Pressure unit: %s", u.cfg.Units.PressureUnit))
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							btn := material.Button(u.theme, &u.setUnitHPaBtn, selectedLabel(u.cfg.Units.PressureUnit == "hPa", "hPa"))
+							return btn.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							btn := material.Button(u.theme, &u.setUnitMMHgBtn, selectedLabel(u.cfg.Units.PressureUnit == "mmHg", "mmHg"))
+							return btn.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							btn := material.Button(u.theme, &u.setUnitInHgBtn, selectedLabel(u.cfg.Units.PressureUnit == "inHg", "inHg"))
+							return btn.Layout(gtx)
+						}),
+					)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body1(u.theme, fmt.Sprintf("Time format: %s", u.cfg.Units.TimeFormat))
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							btn := material.Button(u.theme, &u.setTime24Btn, selectedLabel(u.cfg.Units.TimeFormat == "24h", "24h"))
+							return btn.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							btn := material.Button(u.theme, &u.setTime12Btn, selectedLabel(u.cfg.Units.TimeFormat == "12h", "12h"))
+							return btn.Layout(gtx)
+						}),
+					)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body1(u.theme, "Location coordinates")
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							ed := material.Editor(u.theme, &u.latEditor, "Latitude")
+							return ed.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							ed := material.Editor(u.theme, &u.lonEditor, "Longitude")
+							return ed.Layout(gtx)
+						}),
+					)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.applyCoordsBtn, u.tr("buttons.apply_coordinates", "Apply coordinates"))
 					return btn.Layout(gtx)
 				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.setUnitInHgBtn, selectedLabel(u.cfg.Units.PressureUnit == "inHg", "inHg"))
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body2(
+						u.theme,
+						fmt.Sprintf("Selected city: %s", u.currentCityName()),
+					)
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return u.layoutCitySelector(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.toggleNotifBtn, fmt.Sprintf("%s (%s)", u.tr("buttons.toggle_notifications", "Toggle notifications"), notificationState))
+					return btn.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.settingsTestBtn, u.tr("buttons.test_notification", "Test notification"))
 					return btn.Layout(gtx)
 				}),
 			)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(u.theme, fmt.Sprintf("Time format: %s", u.cfg.Units.TimeFormat))
-			return txt.Layout(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.setTime24Btn, selectedLabel(u.cfg.Units.TimeFormat == "24h", "24h"))
-					return btn.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.setTime12Btn, selectedLabel(u.cfg.Units.TimeFormat == "12h", "12h"))
-					return btn.Layout(gtx)
-				}),
-			)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body1(u.theme, "Location coordinates")
-			return txt.Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					ed := material.Editor(u.theme, &u.latEditor, "Latitude")
-					return ed.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					ed := material.Editor(u.theme, &u.lonEditor, "Longitude")
-					return ed.Layout(gtx)
-				}),
-			)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.applyCoordsBtn, u.tr("buttons.apply_coordinates", "Apply coordinates"))
-			return btn.Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			txt := material.Body2(
-				u.theme,
-				fmt.Sprintf("Selected city: %s", u.currentCityName()),
-			)
-			return txt.Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return u.layoutCitySelector(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.toggleNotifBtn, fmt.Sprintf("%s (%s)", u.tr("buttons.toggle_notifications", "Toggle notifications"), notificationState))
-			return btn.Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.settingsTestBtn, u.tr("buttons.test_notification", "Test notification"))
-			return btn.Layout(gtx)
-		}),
-	)
+		})
+	})
 }
 
 func (u *UI) layoutTest(gtx layout.Context) layout.Dimensions {
