@@ -23,7 +23,9 @@ The app is designed for quick risk awareness at a selected location:
   - on startup
   - manual `Check now`
   - scheduled checks while app is running
-  - optional Android-only mode to continue scheduled checks after closing app window (`disabled` by default)
+  - optional Android-only background mode (`disabled` by default):
+    - app schedules Android background checks via `ForegroundService` + `AlarmManager`
+    - enabled only when `Run scheduled checks while app is closed` is ON in Settings
 - Location:
   - manual coordinates
   - city dropdown with search and scroll
@@ -82,5 +84,5 @@ Build outputs:
 ## Limitations
 
 - Background checks after closing the app are currently Android-only.
-- Android closed-app scheduling is best-effort and not yet implemented as a dedicated OS job scheduler service.
+- Android background execution still depends on device battery/background policies (OEM restrictions may delay jobs).
 - Desktop notifications depend on available system tooling (`notify-send`, `osascript`, PowerShell).

@@ -8,7 +8,6 @@ import (
 	"image/color"
 	"math"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +23,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/vitovt/wetterabhaengig/internal/background"
 	"github.com/vitovt/wetterabhaengig/internal/data"
 	"github.com/vitovt/wetterabhaengig/internal/domain"
 	"github.com/vitovt/wetterabhaengig/internal/gps"
@@ -202,6 +202,7 @@ func New() *UI {
 	u.resetLocationDraft()
 	u.resetSettingsDraft()
 	u.recomputeRisk()
+	u.syncAndroidBackgroundScheduler()
 	return u
 }
 
@@ -235,9 +236,8 @@ func Run(window *app.Window) error {
 		switch event := window.Event().(type) {
 		case app.DestroyEvent:
 			stopInvalidator()
-			if event.Err == nil && u.shouldRunHeadlessAfterClose() {
-				u.runHeadlessChecksLoop()
-				return nil
+			if event.Err == nil {
+				u.triggerAndroidBackgroundScheduler()
 			}
 			return event.Err
 		case app.FrameEvent:
@@ -309,6 +309,7 @@ func (u *UI) handleActions(gtx layout.Context) {
 		} else {
 			u.setStatus(u.trf("status.location_updated", "Location updated: %.4f, %.4f", u.locationLat, u.locationLon), false)
 			u.saveState()
+			u.syncAndroidBackgroundScheduler()
 			u.resetLocationDraft()
 		}
 	}
@@ -384,31 +385,6 @@ func (u *UI) handleActions(gtx layout.Context) {
 
 func (u *UI) runCheckNow() {
 	u.runCheck(false, "manual")
-}
-
-func (u *UI) shouldRunHeadlessAfterClose() bool {
-	return runtime.GOOS == "android" && u.cfg.Schedule.RunWhenClosed
-}
-
-func (u *UI) runHeadlessChecksLoop() {
-	if !u.shouldRunHeadlessAfterClose() {
-		return
-	}
-	if !u.hasChecked {
-		u.runCheck(false, "startup")
-	}
-	if u.shouldRunScheduledCheck(time.Now()) {
-		u.runCheck(false, "scheduled")
-	}
-
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-	for {
-		<-ticker.C
-		if u.shouldRunScheduledCheck(time.Now()) {
-			u.runCheck(false, "scheduled")
-		}
-	}
 }
 
 func (u *UI) runCheck(applyEditorLocation bool, reason string) {
@@ -2153,6 +2129,7 @@ func (u *UI) applySettingsFromEditors() error {
 	u.pruneHistory()
 	u.scheduleNextCheck(time.Now())
 	u.saveState()
+	u.syncAndroidBackgroundScheduler()
 	return nil
 }
 
@@ -2289,6 +2266,19 @@ func (u *UI) saveState() {
 		HasChecked:          u.hasChecked,
 		HomeDetailsExpanded: u.homeDetailsExpanded,
 	})
+}
+
+func (u *UI) syncAndroidBackgroundScheduler() {
+	if err := background.SyncConfig(u.cfg, u.locationLat, u.locationLon); err != nil {
+		u.setStatus(fmt.Sprintf("Background scheduler sync error: %v", err), true)
+	}
+}
+
+func (u *UI) triggerAndroidBackgroundScheduler() {
+	if !u.cfg.Schedule.RunWhenClosed {
+		return
+	}
+	_ = background.TriggerNow()
 }
 
 func defaultLocationIndex(selected location.City, cities []location.City) int {
