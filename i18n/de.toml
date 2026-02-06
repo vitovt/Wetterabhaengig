@@ -5,3 +5,12 @@ subtitle = "Wetterrisiko-Ueberwachung mit Ampelstatus und numerischem Kontext."
 [buttons]
 check_now = "Jetzt pruefen"
 test_notification = "Benachrichtigung testen"
+apply_settings = "Einstellungen anwenden"
+apply_coordinates = "Koordinaten anwenden"
+toggle_notifications = "Benachrichtigungen umschalten"
+
+[nav]
+home = "Start"
+history = "Verlauf"
+settings = "Einstellungen"
+test = "Test"

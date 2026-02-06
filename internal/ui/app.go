@@ -23,6 +23,7 @@ import (
 
 	"github.com/vitovt/wetterabhaengig/internal/data"
 	"github.com/vitovt/wetterabhaengig/internal/domain"
+	"github.com/vitovt/wetterabhaengig/internal/i18n"
 	"github.com/vitovt/wetterabhaengig/internal/location"
 	"github.com/vitovt/wetterabhaengig/internal/notify"
 	"github.com/vitovt/wetterabhaengig/internal/service"
@@ -44,6 +45,7 @@ type UI struct {
 	check *service.Checker
 	ntf   *notify.Notifier
 	store *storage.Store
+	i18n  *i18n.Bundle
 
 	screen Screen
 
@@ -111,6 +113,7 @@ func New() *UI {
 		cfg:         domain.DefaultConfig(),
 		check:       service.NewChecker(data.NewClient(12 * time.Second)),
 		ntf:         notify.New(),
+		i18n:        i18n.Load("i18n"),
 		screen:      ScreenHome,
 		cities:      cities,
 		cityButtons: cityButtons,
@@ -134,7 +137,9 @@ func New() *UI {
 	if storePath, err := storage.DefaultPath("wetterabhaengig"); err == nil {
 		u.store = storage.New(storePath)
 	}
+	u.refreshLanguagesFromBundle()
 	u.loadState()
+	u.refreshLanguagesFromBundle()
 
 	u.latEditor.SingleLine = true
 	u.lonEditor.SingleLine = true
@@ -382,13 +387,13 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 func (u *UI) layoutHeader(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			title := material.H5(u.theme, "Wetterabhaengig")
+			title := material.H5(u.theme, u.tr("app.title", "Wetterabhaengig"))
 			return title.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			sub := material.Body2(
 				u.theme,
-				"Weather risk monitoring with traffic light status and numeric context.",
+				u.tr("app.subtitle", "Weather risk monitoring with traffic light status and numeric context."),
 			)
 			sub.Color = color.NRGBA{A: 255, R: 70, G: 70, B: 70}
 			return sub.Layout(gtx)
@@ -412,16 +417,16 @@ func (u *UI) layoutHeader(gtx layout.Context) layout.Dimensions {
 
 func (u *UI) layoutSidebar(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(u.layoutNavRow(&u.navHome, ScreenHome, "Home")),
+		layout.Rigid(u.layoutNavRow(&u.navHome, ScreenHome, u.tr("nav.home", "Home"))),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(u.layoutNavRow(&u.navHistory, ScreenHistory, "History")),
+		layout.Rigid(u.layoutNavRow(&u.navHistory, ScreenHistory, u.tr("nav.history", "History"))),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(u.layoutNavRow(&u.navSettings, ScreenSettings, "Settings")),
+		layout.Rigid(u.layoutNavRow(&u.navSettings, ScreenSettings, u.tr("nav.settings", "Settings"))),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(u.layoutNavRow(&u.navTest, ScreenTest, "Test")),
+		layout.Rigid(u.layoutNavRow(&u.navTest, ScreenTest, u.tr("nav.test", "Test"))),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(18)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.checkNowBtn, "Check now")
+			btn := material.Button(u.theme, &u.checkNowBtn, u.tr("buttons.check_now", "Check now"))
 			return btn.Layout(gtx)
 		}),
 	)
@@ -431,22 +436,22 @@ func (u *UI) layoutTopNavCompact(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(1, u.layoutNavRow(&u.navHome, ScreenHome, "Home")),
+				layout.Flexed(1, u.layoutNavRow(&u.navHome, ScreenHome, u.tr("nav.home", "Home"))),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, u.layoutNavRow(&u.navHistory, ScreenHistory, "History")),
+				layout.Flexed(1, u.layoutNavRow(&u.navHistory, ScreenHistory, u.tr("nav.history", "History"))),
 			)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(1, u.layoutNavRow(&u.navSettings, ScreenSettings, "Settings")),
+				layout.Flexed(1, u.layoutNavRow(&u.navSettings, ScreenSettings, u.tr("nav.settings", "Settings"))),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, u.layoutNavRow(&u.navTest, ScreenTest, "Test")),
+				layout.Flexed(1, u.layoutNavRow(&u.navTest, ScreenTest, u.tr("nav.test", "Test"))),
 			)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.checkNowBtn, "Check now")
+			btn := material.Button(u.theme, &u.checkNowBtn, u.tr("buttons.check_now", "Check now"))
 			return btn.Layout(gtx)
 		}),
 	)
@@ -551,7 +556,7 @@ func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
 func (u *UI) layoutHistory(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			title := material.H6(u.theme, "History")
+			title := material.H6(u.theme, u.tr("nav.history", "History"))
 			return title.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
@@ -694,7 +699,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			title := material.H6(u.theme, "Settings")
+			title := material.H6(u.theme, u.tr("nav.settings", "Settings"))
 			return title.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
@@ -784,7 +789,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.applySettingsBtn, "Apply settings")
+			btn := material.Button(u.theme, &u.applySettingsBtn, u.tr("buttons.apply_settings", "Apply settings"))
 			return btn.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
@@ -850,7 +855,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.applyCoordsBtn, "Apply coordinates")
+			btn := material.Button(u.theme, &u.applyCoordsBtn, u.tr("buttons.apply_coordinates", "Apply coordinates"))
 			return btn.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
@@ -867,12 +872,12 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.toggleNotifBtn, fmt.Sprintf("Toggle notifications (%s)", notificationState))
+			btn := material.Button(u.theme, &u.toggleNotifBtn, fmt.Sprintf("%s (%s)", u.tr("buttons.toggle_notifications", "Toggle notifications"), notificationState))
 			return btn.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.settingsTestBtn, "Test notification")
+			btn := material.Button(u.theme, &u.settingsTestBtn, u.tr("buttons.test_notification", "Test notification"))
 			return btn.Layout(gtx)
 		}),
 	)
@@ -881,7 +886,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 func (u *UI) layoutTest(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			title := material.H6(u.theme, "Test")
+			title := material.H6(u.theme, u.tr("nav.test", "Test"))
 			return title.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
@@ -903,7 +908,7 @@ func (u *UI) layoutTest(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.testPageTestBtn, "Test notification")
+			btn := material.Button(u.theme, &u.testPageTestBtn, u.tr("buttons.test_notification", "Test notification"))
 			return btn.Layout(gtx)
 		}),
 	)
@@ -1043,6 +1048,34 @@ func (u *UI) setStatus(message string, isError bool) {
 	u.statusMessageError = isError
 }
 
+func (u *UI) refreshLanguagesFromBundle() {
+	if u.i18n == nil {
+		return
+	}
+	u.cfg.Languages = u.i18n.AvailableLanguages()
+	lang := strings.TrimSpace(u.cfg.Language)
+	if lang == "" {
+		u.cfg.Language = "system"
+		return
+	}
+	if lang == "system" {
+		return
+	}
+	for _, candidate := range u.cfg.Languages {
+		if candidate == lang {
+			return
+		}
+	}
+	u.cfg.Language = "system"
+}
+
+func (u *UI) tr(key, fallback string) string {
+	if u.i18n == nil {
+		return fallback
+	}
+	return u.i18n.Text(u.cfg.Language, key, fallback)
+}
+
 func (u *UI) initSettingsEditors() {
 	editors := []*widget.Editor{
 		&u.setPressureMediumEditor,
@@ -1122,6 +1155,9 @@ func (u *UI) applySettingsFromEditors() error {
 	cfg.Schedule.PeriodMinutes = scheduleMinutes
 	cfg.Retention.DefaultDays = retentionDays
 	cfg.Language = language
+	if cfg.Language != "system" && !containsString(cfg.Languages, cfg.Language) {
+		return fmt.Errorf("unknown language code: %s", cfg.Language)
+	}
 
 	if err := domain.ValidateConfig(cfg); err != nil {
 		return err
@@ -1289,6 +1325,15 @@ func selectedLabel(selected bool, text string) string {
 		return "• " + text
 	}
 	return text
+}
+
+func containsString(items []string, needle string) bool {
+	for i := range items {
+		if items[i] == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func thresholdLabel(level domain.RiskLevel, t domain.PressureThresholds) float64 {

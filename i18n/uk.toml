@@ -1,7 +1,16 @@
 [app]
 title = "Wetterabhaengig"
-subtitle = "Monitoring weather risk with traffic light status and numeric context."
+subtitle = "Моніторинг погодного ризику зі статусом світлофора та числовим контекстом."
 
 [buttons]
-check_now = "Check now"
-test_notification = "Test notification"
+check_now = "Перевірити зараз"
+test_notification = "Тест сповіщення"
+apply_settings = "Застосувати налаштування"
+apply_coordinates = "Застосувати координати"
+toggle_notifications = "Перемкнути сповіщення"
+
+[nav]
+home = "Головна"
+history = "Історія"
+settings = "Налаштування"
+test = "Тест"

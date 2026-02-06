@@ -5,3 +5,12 @@ subtitle = "Weather risk monitoring with traffic light status and numeric contex
 [buttons]
 check_now = "Check now"
 test_notification = "Test notification"
+apply_settings = "Apply settings"
+apply_coordinates = "Apply coordinates"
+toggle_notifications = "Toggle notifications"
+
+[nav]
+home = "Home"
+history = "History"
+settings = "Settings"
+test = "Test"
