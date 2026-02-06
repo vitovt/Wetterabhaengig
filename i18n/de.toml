@@ -15,3 +15,9 @@ home = "Start"
 history = "Verlauf"
 settings = "Einstellungen"
 test = "Test"
+
+[settings]
+language = "Sprache"
+current_language = "Aktuelle Sprache"
+system_default = "Systemstandard"
+no_languages = "Keine Sprachen gefunden"

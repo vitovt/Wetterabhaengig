@@ -15,3 +15,9 @@ home = "Головна"
 history = "Історія"
 settings = "Налаштування"
 test = "Тест"
+
+[settings]
+language = "Мова"
+current_language = "Поточна мова"
+system_default = "Системна за замовчуванням"
+no_languages = "Мови не знайдено"

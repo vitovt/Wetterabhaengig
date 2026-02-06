@@ -15,3 +15,9 @@ home = "Home"
 history = "History"
 settings = "Settings"
 test = "Test"
+
+[settings]
+language = "Language"
+current_language = "Current language"
+system_default = "System default"
+no_languages = "No languages found"

@@ -74,14 +74,14 @@ type UI struct {
 	setKCritEditor          widget.Editor
 	setScheduleEditor       widget.Editor
 	setRetentionDaysEditor  widget.Editor
-	setLanguageEditor       widget.Editor
 
-	setUnitHPaBtn  widget.Clickable
-	setUnitMMHgBtn widget.Clickable
-	setUnitInHgBtn widget.Clickable
-	setTime24Btn   widget.Clickable
-	setTime12Btn   widget.Clickable
-	getGPSBtn      widget.Clickable
+	setUnitHPaBtn   widget.Clickable
+	setUnitMMHgBtn  widget.Clickable
+	setUnitInHgBtn  widget.Clickable
+	setTime24Btn    widget.Clickable
+	setTime12Btn    widget.Clickable
+	getGPSBtn       widget.Clickable
+	languageButtons []widget.Clickable
 
 	latEditor        widget.Editor
 	lonEditor        widget.Editor
@@ -281,6 +281,14 @@ func (u *UI) handleActions(gtx layout.Context) {
 	}
 	for u.cityToggleBtn.Clicked(gtx) {
 		u.cityDropdownOpen = !u.cityDropdownOpen
+	}
+	for idx := range u.languageButtons {
+		if idx >= len(u.cfg.Languages) {
+			break
+		}
+		for u.languageButtons[idx].Clicked(gtx) {
+			u.selectLanguage(u.cfg.Languages[idx])
+		}
 	}
 	for u.applySettingsBtn.Clicked(gtx) {
 		if err := u.applySettingsFromEditors(); err != nil {
@@ -906,12 +914,23 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					ed := material.Editor(u.theme, &u.setLanguageEditor, "Language code (system, en, de, uk)")
-					return ed.Layout(gtx)
+					txt := material.Body1(u.theme, u.tr("settings.language", "Language"))
+					return txt.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					txt := material.Body2(u.theme, fmt.Sprintf("Available language codes: %v", u.cfg.Languages))
+					txt := material.Body2(
+						u.theme,
+						fmt.Sprintf(
+							"%s: %s",
+							u.tr("settings.current_language", "Current language"),
+							u.languageDisplayName(u.cfg.Language),
+						),
+					)
 					return txt.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return u.layoutLanguageSwitcher(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1158,6 +1177,31 @@ func (u *UI) layoutCityDropdown(gtx layout.Context) layout.Dimensions {
 	)
 }
 
+func (u *UI) layoutLanguageSwitcher(gtx layout.Context) layout.Dimensions {
+	u.syncLanguageButtons()
+	if len(u.cfg.Languages) == 0 {
+		return material.Body2(u.theme, u.tr("settings.no_languages", "No languages found")).Layout(gtx)
+	}
+
+	children := make([]layout.FlexChild, 0, len(u.cfg.Languages)*2)
+	for idx, code := range u.cfg.Languages {
+		i := idx
+		langCode := code
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			btn := material.Button(
+				u.theme,
+				&u.languageButtons[i],
+				selectedLabel(u.cfg.Language == langCode, u.languageDisplayName(langCode)),
+			)
+			return btn.Layout(gtx)
+		}))
+		if idx < len(u.cfg.Languages)-1 {
+			children = append(children, layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout))
+		}
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+}
+
 func (u *UI) selectCity(index int) {
 	if index < 0 || index >= len(u.cities) {
 		return
@@ -1174,6 +1218,25 @@ func (u *UI) selectCity(index int) {
 		false,
 	)
 	u.saveState()
+}
+
+func (u *UI) selectLanguage(language string) {
+	if language == "" {
+		language = "system"
+	}
+	if !containsString(u.cfg.Languages, language) {
+		u.setStatus(fmt.Sprintf("Unknown language: %s", language), true)
+		return
+	}
+	if u.cfg.Language == language {
+		return
+	}
+	u.cfg.Language = language
+	u.saveState()
+	u.setStatus(
+		fmt.Sprintf("Language switched to: %s", u.languageDisplayName(language)),
+		false,
+	)
 }
 
 func (u *UI) getCurrentLocationViaGPS() {
@@ -1246,6 +1309,7 @@ func (u *UI) setStatus(message string, isError bool) {
 
 func (u *UI) refreshLanguagesFromBundle() {
 	if u.i18n == nil {
+		u.syncLanguageButtons()
 		return
 	}
 	u.cfg.Languages = u.i18n.AvailableLanguages()
@@ -1259,10 +1323,12 @@ func (u *UI) refreshLanguagesFromBundle() {
 	}
 	for _, candidate := range u.cfg.Languages {
 		if candidate == lang {
+			u.syncLanguageButtons()
 			return
 		}
 	}
 	u.cfg.Language = "system"
+	u.syncLanguageButtons()
 }
 
 func (u *UI) tr(key, fallback string) string {
@@ -1282,7 +1348,6 @@ func (u *UI) initSettingsEditors() {
 		&u.setKCritEditor,
 		&u.setScheduleEditor,
 		&u.setRetentionDaysEditor,
-		&u.setLanguageEditor,
 	}
 	for _, ed := range editors {
 		ed.SingleLine = true
@@ -1295,7 +1360,7 @@ func (u *UI) initSettingsEditors() {
 	u.setKCritEditor.SetText(fmt.Sprintf("%.1f", u.cfg.KIndex.Crit))
 	u.setScheduleEditor.SetText(fmt.Sprintf("%d", u.cfg.Schedule.PeriodMinutes))
 	u.setRetentionDaysEditor.SetText(fmt.Sprintf("%d", u.cfg.Retention.DefaultDays))
-	u.setLanguageEditor.SetText(u.cfg.Language)
+	u.syncLanguageButtons()
 }
 
 func (u *UI) applySettingsFromEditors() error {
@@ -1333,11 +1398,6 @@ func (u *UI) applySettingsFromEditors() error {
 	if err != nil {
 		return err
 	}
-	language := strings.TrimSpace(u.setLanguageEditor.Text())
-	if language == "" {
-		language = "system"
-	}
-
 	cfg.Pressure = domain.PressureThresholds{
 		Medium: pressureMedium,
 		High:   pressureHigh,
@@ -1350,7 +1410,10 @@ func (u *UI) applySettingsFromEditors() error {
 	}
 	cfg.Schedule.PeriodMinutes = scheduleMinutes
 	cfg.Retention.DefaultDays = retentionDays
-	cfg.Language = language
+	cfg.Language = strings.TrimSpace(cfg.Language)
+	if cfg.Language == "" {
+		cfg.Language = "system"
+	}
 	if cfg.Language != "system" && !containsString(cfg.Languages, cfg.Language) {
 		return fmt.Errorf("unknown language code: %s", cfg.Language)
 	}
@@ -1446,6 +1509,7 @@ func (u *UI) loadState() {
 	if len(u.cfg.Languages) == 0 {
 		u.cfg.Languages = []string{"system", "en", "de", "uk"}
 	}
+	u.syncLanguageButtons()
 	u.locationLat = state.LocationLat
 	u.locationLon = state.LocationLon
 	u.selectedCity = state.SelectedCity
@@ -1530,6 +1594,38 @@ func containsString(items []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func (u *UI) syncLanguageButtons() {
+	if len(u.cfg.Languages) == 0 {
+		u.cfg.Languages = []string{"system"}
+	}
+	if len(u.languageButtons) == len(u.cfg.Languages) {
+		return
+	}
+	u.languageButtons = make([]widget.Clickable, len(u.cfg.Languages))
+}
+
+func (u *UI) languageDisplayName(code string) string {
+	switch code {
+	case "system":
+		if u.i18n == nil {
+			return "System default"
+		}
+		resolved := u.i18n.ResolveLanguage("system")
+		return fmt.Sprintf("%s (%s)", u.tr("settings.system_default", "System default"), strings.ToUpper(resolved))
+	case "en":
+		return "English"
+	case "de":
+		return "Deutsch"
+	case "uk":
+		return "Ukrainian"
+	default:
+		if code == "" {
+			return "System default"
+		}
+		return strings.ToUpper(code)
+	}
 }
 
 func thresholdLabel(level domain.RiskLevel, t domain.PressureThresholds) float64 {
