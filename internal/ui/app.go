@@ -67,7 +67,6 @@ type UI struct {
 
 	checkNowBtn         widget.Clickable
 	homeCheckNowBtn     widget.Clickable
-	settingsTestBtn     widget.Clickable
 	testPageTestBtn     widget.Clickable
 	applySettingsBtn    widget.Clickable
 	homeDetailsBtn      widget.Clickable
@@ -325,9 +324,6 @@ func (u *UI) handleActions(gtx layout.Context) {
 		} else {
 			u.settingsTimeFormat = "12h"
 		}
-	}
-	for u.settingsTestBtn.Clicked(gtx) {
-		u.triggerTestNotification()
 	}
 	for u.testPageTestBtn.Clicked(gtx) {
 		u.triggerTestNotification()
@@ -1306,7 +1302,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							btn := material.Button(u.theme, &u.setThemeSystemBtn, selectedLabel(u.settingsThemeMode == "system", u.tr("settings.theme_system", "System default")))
+							btn := material.Button(u.theme, &u.setThemeSystemBtn, selectedLabel(u.settingsThemeMode == "system", u.tr("settings.theme_system", "System")))
 							return btn.Layout(gtx)
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
@@ -1320,10 +1316,6 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 							return btn.Layout(gtx)
 						}),
 					)
-				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return u.layoutPrimaryButton(gtx, &u.applySettingsBtn, u.tr("buttons.save_settings", "Save settings"), u.settingsDirty)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1410,8 +1402,7 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.settingsTestBtn, u.tr("buttons.test_notification", "Test notification"))
-					return btn.Layout(gtx)
+					return u.layoutPrimaryButton(gtx, &u.applySettingsBtn, u.tr("buttons.save_settings", "Save settings"), u.settingsDirty)
 				}),
 			)
 		})
@@ -2484,10 +2475,10 @@ func (u *UI) languageDisplayName(code string) string {
 	switch code {
 	case "system":
 		if u.i18n == nil {
-			return u.tr("settings.system_default", "System default")
+			return u.tr("settings.system_default", "System")
 		}
 		resolved := u.i18n.ResolveLanguage("system")
-		return fmt.Sprintf("%s (%s)", u.tr("settings.system_default", "System default"), strings.ToUpper(resolved))
+		return fmt.Sprintf("%s (%s)", u.tr("settings.system_default", "System"), strings.ToUpper(resolved))
 	case "en":
 		return u.tr("settings.lang_en", "English")
 	case "de":
@@ -2496,7 +2487,7 @@ func (u *UI) languageDisplayName(code string) string {
 		return u.tr("settings.lang_uk", "Ukrainian")
 	default:
 		if code == "" {
-			return u.tr("settings.system_default", "System default")
+			return u.tr("settings.system_default", "System")
 		}
 		return strings.ToUpper(code)
 	}
