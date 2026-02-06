@@ -65,14 +65,14 @@ type UI struct {
 	menuScrimBtn widget.Clickable
 	menuOpen     bool
 
-	checkNowBtn       widget.Clickable
-	homeCheckNowBtn   widget.Clickable
-	settingsTestBtn   widget.Clickable
-	testPageTestBtn   widget.Clickable
-	toggleNotifBtn    widget.Clickable
-	toggleBgChecksBtn widget.Clickable
-	applySettingsBtn  widget.Clickable
-	homeDetailsBtn    widget.Clickable
+	checkNowBtn         widget.Clickable
+	homeCheckNowBtn     widget.Clickable
+	settingsTestBtn     widget.Clickable
+	testPageTestBtn     widget.Clickable
+	toggleBgChecksBtn   widget.Clickable
+	applySettingsBtn    widget.Clickable
+	homeDetailsBtn      widget.Clickable
+	settingsNotifSwitch widget.Bool
 
 	setPressureMediumEditor widget.Editor
 	setPressureHighEditor   widget.Editor
@@ -314,8 +314,8 @@ func (u *UI) handleActions(gtx layout.Context) {
 			u.resetLocationDraft()
 		}
 	}
-	for u.toggleNotifBtn.Clicked(gtx) {
-		u.settingsNotificationsEnabled = !u.settingsNotificationsEnabled
+	if u.settingsNotifSwitch.Update(gtx) {
+		u.settingsNotificationsEnabled = u.settingsNotifSwitch.Value
 	}
 	for u.toggleBgChecksBtn.Clicked(gtx) {
 		u.settingsRunWhenClosed = !u.settingsRunWhenClosed
@@ -1157,10 +1157,7 @@ func drawLine(gtx layout.Context, x1, y1, x2, y2, width float32, col color.NRGBA
 }
 
 func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
-	notificationState := u.tr("common.on", "ON")
-	if !u.settingsNotificationsEnabled {
-		notificationState = u.tr("common.off", "OFF")
-	}
+	u.settingsNotifSwitch.Value = u.settingsNotificationsEnabled
 	backgroundState := u.tr("common.on", "ON")
 	if !u.settingsRunWhenClosed {
 		backgroundState = u.tr("common.off", "OFF")
@@ -1383,8 +1380,8 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					btn := material.Button(u.theme, &u.toggleNotifBtn, fmt.Sprintf("%s (%s)", u.tr("buttons.toggle_notifications", "Toggle notifications"), notificationState))
-					return btn.Layout(gtx)
+					sw := material.Switch(u.theme, &u.settingsNotifSwitch, u.tr("details.notifications", "Notifications"))
+					return sw.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1871,6 +1868,7 @@ func (u *UI) resetSettingsDraft() {
 	u.settingsPressureUnit = u.cfg.Units.PressureUnit
 	u.settingsTimeFormat = u.cfg.Units.TimeFormat
 	u.settingsNotificationsEnabled = u.cfg.Notifications.Enabled
+	u.settingsNotifSwitch.Value = u.settingsNotificationsEnabled
 	u.settingsRunWhenClosed = u.cfg.Schedule.RunWhenClosed
 	u.settingsThemeMode = strings.TrimSpace(u.cfg.ThemeMode)
 	if u.settingsThemeMode == "" {
