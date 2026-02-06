@@ -142,6 +142,7 @@ type UI struct {
 	nextScheduledCheck   time.Time
 	lastRiskUpdate       time.Time
 	homeDetailsExpanded  bool
+	systemThemeMode      string
 	platformLanguageInit bool
 	lastScreen           Screen
 }
@@ -186,6 +187,7 @@ func New() *UI {
 		statusMessage:    "Ready. Press Check now to load live data.",
 		autoCheckPending: true,
 		lastRiskUpdate:   time.Now(),
+		systemThemeMode:  detectSystemThemeMode(),
 		lastScreen:       ScreenHome,
 	}
 
@@ -2263,6 +2265,9 @@ func (u *UI) effectiveThemeMode() string {
 	case "dark", "light":
 		return mode
 	default:
+		if u.systemThemeMode == "dark" {
+			return "dark"
+		}
 		return "light"
 	}
 }
@@ -2410,6 +2415,19 @@ func blendColor(a, b color.NRGBA, t float32) color.NRGBA {
 		B: lerp(a.B, b.B),
 		A: lerp(a.A, b.A),
 	}
+}
+
+func detectSystemThemeMode() string {
+	raw := strings.ToLower(strings.TrimSpace(strings.Join([]string{
+		os.Getenv("GTK_THEME"),
+		os.Getenv("KDE_COLOR_SCHEME"),
+		os.Getenv("QT_STYLE_OVERRIDE"),
+		os.Getenv("SYSTEM_THEME"),
+	}, " ")))
+	if strings.Contains(raw, "dark") {
+		return "dark"
+	}
+	return "light"
 }
 
 func (u *UI) parseFloatEditor(editor *widget.Editor, label string) (float64, error) {
