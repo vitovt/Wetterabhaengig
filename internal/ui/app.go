@@ -1022,9 +1022,21 @@ func (u *UI) layoutHistory(gtx layout.Context) layout.Dimensions {
 				u.theme,
 				u.tr(
 					"history.description",
-					"Chart implementation comes next. History rows below already track pressure delta and K-index per check.",
+					"The chart shows how pressure delta and K-index changed over time.",
 				),
 			)
+			return text.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			text := material.Body2(
+				u.theme,
+				u.tr(
+					"history.guide",
+					"Look for HIGH or CRITICAL periods. Red chart segments and highlighted rows below show when potential problems happened.",
+				),
+			)
+			text.Color = u.mutedTextColor()
 			return text.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
@@ -1036,16 +1048,75 @@ func (u *UI) layoutHistory(gtx layout.Context) layout.Dimensions {
 			}
 			return u.historyList.Layout(gtx, len(u.history), func(gtx layout.Context, index int) layout.Dimensions {
 				item := u.history[len(u.history)-1-index]
-				line := u.trf(
-					"history.row",
-					"%s | risk=%s | delta=%.2f hPa | K=%.1f",
-					u.formatTime(item.CheckedAt),
-					u.riskLabel(item.OverallRisk),
-					item.PressureDeltaHPa,
-					item.KIndex,
-				)
-				return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return material.Body1(u.theme, line).Layout(gtx)
+				primaryPressure, _ := domain.ConvertPressureDelta(item.PressureDeltaHPa, u.cfg.Units.PressureUnit)
+				pressureRisk := domain.RiskFromPressureDelta(item.PressureDeltaHPa, u.cfg.Pressure)
+				kRisk := domain.RiskFromKIndex(item.KIndex, u.cfg.KIndex)
+				isProblem := item.OverallRisk >= domain.RiskHigh
+
+				borderColor := u.subtleBorderColor()
+				if isProblem {
+					borderColor = riskColor(item.OverallRisk)
+				}
+
+				return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return widget.Border{
+						Color:        borderColor,
+						CornerRadius: unit.Dp(8),
+						Width:        unit.Dp(1),
+					}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.UniformInset(unit.Dp(10)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									txt := material.Body2(u.theme, u.trf("history.item_time", "Time: %s", u.formatTime(item.CheckedAt)))
+									txt.Color = u.mutedTextColor()
+									return txt.Layout(gtx)
+								}),
+								layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									txt := material.Body1(u.theme, u.trf("history.item_risk", "Overall risk: %s", u.riskLabel(item.OverallRisk)))
+									return txt.Layout(gtx)
+								}),
+								layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									txt := material.Body2(
+										u.theme,
+										u.trf(
+											"history.item_pressure",
+											"Delta Pressure: %s -- %s",
+											u.valueWithUnit(primaryPressure, u.cfg.Units.PressureUnit),
+											u.pressureBandLabelFor(pressureRisk),
+										),
+									)
+									return txt.Layout(gtx)
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									txt := material.Body2(
+										u.theme,
+										u.trf(
+											"history.item_k",
+											"K-index: %d -- %s",
+											int(math.Round(item.KIndex)),
+											u.kBandLabelFor(kRisk),
+										),
+									)
+									return txt.Layout(gtx)
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if !isProblem {
+										return layout.Dimensions{}
+									}
+									return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										txt := material.Body2(
+											u.theme,
+											u.tr("history.problem_mark", "Potential problem period. Check this time and nearby chart points."),
+										)
+										txt.Color = riskColor(item.OverallRisk)
+										return txt.Layout(gtx)
+									})
+								}),
+							)
+						})
+					})
 				})
 			})
 		}),
@@ -2291,7 +2362,11 @@ func (u *UI) riskMeaningText() string {
 }
 
 func (u *UI) pressureBandLabel() string {
-	switch u.pressureRisk {
+	return u.pressureBandLabelFor(u.pressureRisk)
+}
+
+func (u *UI) pressureBandLabelFor(level domain.RiskLevel) string {
+	switch level {
 	case domain.RiskCritical:
 		return u.tr("pressureBand.extreme", "Extreme")
 	case domain.RiskHigh:
@@ -2304,7 +2379,11 @@ func (u *UI) pressureBandLabel() string {
 }
 
 func (u *UI) kBandLabel() string {
-	switch u.kIndexRisk {
+	return u.kBandLabelFor(u.kIndexRisk)
+}
+
+func (u *UI) kBandLabelFor(level domain.RiskLevel) string {
+	switch level {
 	case domain.RiskCritical:
 		return u.tr("kBand.storm", "Storm")
 	case domain.RiskHigh:

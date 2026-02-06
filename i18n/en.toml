@@ -62,9 +62,15 @@ last_check = "Last check: %s"
 next_scheduled = "Next scheduled check: %s"
 
 [history]
-description = "Chart implementation comes next. History rows below already track pressure delta and K-index per check."
+description = "The chart shows how pressure delta and K-index changed over time."
+guide = "Look for HIGH or CRITICAL periods. Red chart segments and highlighted rows below show when potential problems happened."
 none = "No history yet. Run Check now."
 row = "%s | risk=%s | delta=%.2f hPa | K=%.1f"
+item_time = "Time: %s"
+item_risk = "Overall risk: %s"
+item_pressure = "Delta Pressure: %s -- %s"
+item_k = "K-index: %d -- %s"
+problem_mark = "Potential problem period. Check this time and nearby chart points."
 
 [settings]
 language = "Language"

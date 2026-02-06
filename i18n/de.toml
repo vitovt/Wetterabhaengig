@@ -62,9 +62,15 @@ last_check = "Letzte Pruefung: %s"
 next_scheduled = "Naechste geplante Pruefung: %s"
 
 [history]
-description = "Die Diagramm-Implementierung folgt. Die Verlaufseintraege unten enthalten bereits Druckaenderung und K-Index pro Pruefung."
+description = "Das Diagramm zeigt, wie sich Druckaenderung und K-Index im Zeitverlauf entwickelt haben."
+guide = "Suche nach HOCHEN oder KRITISCHEN Phasen. Rote Diagrammsegmente und markierte Eintraege unten zeigen, wann moegliche Probleme auftraten."
 none = "Noch kein Verlauf. Fuehre Jetzt pruefen aus."
 row = "%s | Risiko=%s | Delta=%.2f hPa | K=%.1f"
+item_time = "Zeit: %s"
+item_risk = "Gesamtrisiko: %s"
+item_pressure = "Druckaenderung: %s -- %s"
+item_k = "K-Index: %d -- %s"
+problem_mark = "Moeglicher Problemzeitraum. Pruefe diese Zeit und die benachbarten Punkte im Diagramm."
 
 [settings]
 language = "Sprache"
