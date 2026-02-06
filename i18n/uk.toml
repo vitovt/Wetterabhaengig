@@ -8,6 +8,7 @@ test_notification = "Тест сповіщення"
 save_settings = "Зберегти налаштування"
 save_location = "Зберегти локацію"
 toggle_notifications = "Перемкнути сповіщення"
+toggle_background_checks = "Перемкнути фонові перевірки при закритому застосунку"
 get_gps_location = "Отримати мою поточну GPS-локацію"
 
 [nav]
@@ -79,6 +80,8 @@ current_kindex = "Поточний K-індекс: середній>=%.1f, ви�
 schedule_info = "Інтервал хв (>= %d) і дні зберігання (макс %d років)"
 schedule_minutes = "Інтервал у хвилинах"
 retention_days = "Дні зберігання"
+background_checks_closed = "Виконувати перевірки у фоні, коли застосунок закрито (Android)"
+background_checks_note = "За замовчуванням вимкнено. Цей режим лише для Android і залежить від системних обмежень батареї/фону."
 pressure_unit = "Одиниця тиску: %s"
 time_format = "Формат часу: %s"
 location_coordinates = "Координати локації"

@@ -142,26 +142,34 @@ func (n *androidNotifier) SetAndroidView(view uintptr) {
 
 func (n *androidNotifier) Send(title, body string) error {
 	return withJNIEnv(func(env *C.JNIEnv, appCtx C.jobject) error {
-		activity, err := n.activityFromView(env)
-		if err != nil {
-			return err
+		var zeroObj C.jobject
+		activity, activityErr := n.activityFromView(env)
+		hasActivity := activityErr == nil && activity != zeroObj
+		if hasActivity {
+			defer C.jni_DeleteLocalRef(env, activity)
 		}
-		defer C.jni_DeleteLocalRef(env, activity)
 
 		sdkInt, err := androidSDKInt(env)
 		if err != nil {
 			return err
 		}
 		if sdkInt >= minNotificationPermissionAPI {
-			granted, err := checkPermission(env, activity, notificationPermission)
+			permissionCtx := appCtx
+			if hasActivity {
+				permissionCtx = activity
+			}
+			granted, err := checkPermission(env, permissionCtx, notificationPermission)
 			if err != nil {
 				return err
 			}
 			if !granted {
-				if err := requestPermission(env, activity, notificationPermission, notificationPermissionRequest); err != nil {
-					return fmt.Errorf("cannot request notification permission dialog: %w", err)
+				if hasActivity {
+					if err := requestPermission(env, activity, notificationPermission, notificationPermissionRequest); err != nil {
+						return fmt.Errorf("cannot request notification permission dialog: %w", err)
+					}
+					return errors.New("notification permission is not granted yet; allow it and press Test notification again (if no dialog appears, rebuild APK with POST_NOTIFICATIONS in manifest)")
 				}
-				return errors.New("notification permission is not granted yet; allow it and press Test notification again (if no dialog appears, rebuild APK with POST_NOTIFICATIONS in manifest)")
+				return errors.New("notification permission is not granted for background delivery; open the app and allow notifications")
 			}
 		}
 

@@ -41,6 +41,7 @@ type KIndexThresholds struct {
 type ScheduleSettings struct {
 	PeriodMinutes int
 	MinMinutes    int
+	RunWhenClosed bool
 }
 
 type RetentionSettings struct {
@@ -88,6 +89,7 @@ func DefaultConfig() AppConfig {
 		Schedule: ScheduleSettings{
 			PeriodMinutes: 60,
 			MinMinutes:    15,
+			RunWhenClosed: false,
 		},
 		Retention: RetentionSettings{
 			DefaultDays: 30,

@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -62,11 +63,12 @@ type UI struct {
 	menuScrimBtn widget.Clickable
 	menuOpen     bool
 
-	checkNowBtn      widget.Clickable
-	settingsTestBtn  widget.Clickable
-	testPageTestBtn  widget.Clickable
-	toggleNotifBtn   widget.Clickable
-	applySettingsBtn widget.Clickable
+	checkNowBtn       widget.Clickable
+	settingsTestBtn   widget.Clickable
+	testPageTestBtn   widget.Clickable
+	toggleNotifBtn    widget.Clickable
+	toggleBgChecksBtn widget.Clickable
+	applySettingsBtn  widget.Clickable
 
 	setPressureMediumEditor widget.Editor
 	setPressureHighEditor   widget.Editor
@@ -113,6 +115,7 @@ type UI struct {
 	settingsNotificationsEnabled bool
 	settingsPressureUnit         string
 	settingsTimeFormat           string
+	settingsRunWhenClosed        bool
 
 	metrics      domain.Metrics
 	pressureRisk domain.RiskLevel
@@ -191,6 +194,14 @@ func Run(window *app.Window) error {
 	u := New()
 	var ops op.Ops
 	stopInvalidate := make(chan struct{})
+	stoppedInvalidate := false
+	stopInvalidator := func() {
+		if stoppedInvalidate {
+			return
+		}
+		close(stopInvalidate)
+		stoppedInvalidate = true
+	}
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
@@ -203,11 +214,16 @@ func Run(window *app.Window) error {
 			}
 		}
 	}()
-	defer close(stopInvalidate)
+	defer stopInvalidator()
 
 	for {
 		switch event := window.Event().(type) {
 		case app.DestroyEvent:
+			stopInvalidator()
+			if event.Err == nil && u.shouldRunHeadlessAfterClose() {
+				u.runHeadlessChecksLoop()
+				return nil
+			}
 			return event.Err
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, event)
@@ -277,6 +293,9 @@ func (u *UI) handleActions(gtx layout.Context) {
 	for u.toggleNotifBtn.Clicked(gtx) {
 		u.settingsNotificationsEnabled = !u.settingsNotificationsEnabled
 	}
+	for u.toggleBgChecksBtn.Clicked(gtx) {
+		u.settingsRunWhenClosed = !u.settingsRunWhenClosed
+	}
 	for u.settingsTestBtn.Clicked(gtx) {
 		u.triggerTestNotification()
 	}
@@ -336,6 +355,31 @@ func (u *UI) handleActions(gtx layout.Context) {
 
 func (u *UI) runCheckNow() {
 	u.runCheck(false, "manual")
+}
+
+func (u *UI) shouldRunHeadlessAfterClose() bool {
+	return runtime.GOOS == "android" && u.cfg.Schedule.RunWhenClosed
+}
+
+func (u *UI) runHeadlessChecksLoop() {
+	if !u.shouldRunHeadlessAfterClose() {
+		return
+	}
+	if !u.hasChecked {
+		u.runCheck(false, "startup")
+	}
+	if u.shouldRunScheduledCheck(time.Now()) {
+		u.runCheck(false, "scheduled")
+	}
+
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for {
+		<-ticker.C
+		if u.shouldRunScheduledCheck(time.Now()) {
+			u.runCheck(false, "scheduled")
+		}
+	}
 }
 
 func (u *UI) runCheck(applyEditorLocation bool, reason string) {
@@ -861,6 +905,10 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 	if !u.settingsNotificationsEnabled {
 		notificationState = u.tr("common.off", "OFF")
 	}
+	backgroundState := u.tr("common.on", "ON")
+	if !u.settingsRunWhenClosed {
+		backgroundState = u.tr("common.off", "OFF")
+	}
 
 	return u.settingsList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 		content := gtx
@@ -1030,6 +1078,29 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 							return btn.Layout(gtx)
 						}),
 					)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body1(
+						u.theme,
+						fmt.Sprintf(
+							"%s (%s)",
+							u.tr("settings.background_checks_closed", "Run checks in background when app is closed (Android)"),
+							backgroundState,
+						),
+					)
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					btn := material.Button(u.theme, &u.toggleBgChecksBtn, u.tr("buttons.toggle_background_checks", "Toggle background checks when app is closed"))
+					return btn.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body2(
+						u.theme,
+						u.tr("settings.background_checks_note", "Disabled by default. This mode is Android-only and depends on system battery/background limits."),
+					)
+					return txt.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1486,6 +1557,7 @@ func (u *UI) resetSettingsDraft() {
 	u.settingsPressureUnit = u.cfg.Units.PressureUnit
 	u.settingsTimeFormat = u.cfg.Units.TimeFormat
 	u.settingsNotificationsEnabled = u.cfg.Notifications.Enabled
+	u.settingsRunWhenClosed = u.cfg.Schedule.RunWhenClosed
 	u.settingsLanguage = strings.TrimSpace(u.cfg.Language)
 	if u.settingsLanguage == "" {
 		u.settingsLanguage = "system"
@@ -1545,6 +1617,9 @@ func (u *UI) isSettingsDirty() bool {
 		return true
 	}
 	if u.settingsNotificationsEnabled != u.cfg.Notifications.Enabled {
+		return true
+	}
+	if u.settingsRunWhenClosed != u.cfg.Schedule.RunWhenClosed {
 		return true
 	}
 	if strings.TrimSpace(u.settingsLanguage) != strings.TrimSpace(u.cfg.Language) {
@@ -1638,6 +1713,7 @@ func (u *UI) applySettingsFromEditors() error {
 		Crit:   kCrit,
 	}
 	cfg.Schedule.PeriodMinutes = scheduleMinutes
+	cfg.Schedule.RunWhenClosed = u.settingsRunWhenClosed
 	cfg.Retention.DefaultDays = retentionDays
 	cfg.Units.PressureUnit = strings.TrimSpace(u.settingsPressureUnit)
 	if cfg.Units.PressureUnit == "" {
