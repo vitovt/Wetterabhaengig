@@ -10,13 +10,14 @@ ANDROID_HOME_FALLBACK := $(or $(ANDROID_HOME),$(ANDROID_SDK_ROOT),$(HOME)/Androi
 
 .DEFAULT_GOAL := help
 
-.PHONY: help prepare deps linux windows mac android clean
+.PHONY: help prepare deps test linux windows mac android clean
 
 help:
 	@echo "Available targets:"
 	@echo "  make help     - Show this help output (default)."
 	@echo "  make prepare  - Create local build folders."
 	@echo "  make deps     - Sync Go dependencies."
+	@echo "  make test     - Run automated tests."
 	@echo "  make linux    - Build Linux binary."
 	@echo "  make windows  - Build Windows binary."
 	@echo "  make mac      - Build macOS binary (run on macOS host)."
@@ -31,6 +32,9 @@ prepare:
 
 deps:
 	go mod tidy
+
+test:
+	go test ./...
 
 linux: prepare
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o $(BUILD_DIR)/linux/$(APP_NAME) $(MAIN_PKG)

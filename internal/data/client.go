@@ -15,8 +15,15 @@ type Client struct {
 }
 
 func NewClient(timeout time.Duration) *Client {
+	return NewClientWithHTTPClient(&http.Client{Timeout: timeout})
+}
+
+func NewClientWithHTTPClient(httpClient *http.Client) *Client {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 10 * time.Second}
+	}
 	return &Client{
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: httpClient,
 	}
 }
 
