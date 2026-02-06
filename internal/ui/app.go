@@ -21,6 +21,7 @@ import (
 	"github.com/vitovt/wetterabhaengig/internal/data"
 	"github.com/vitovt/wetterabhaengig/internal/domain"
 	"github.com/vitovt/wetterabhaengig/internal/location"
+	"github.com/vitovt/wetterabhaengig/internal/notify"
 	"github.com/vitovt/wetterabhaengig/internal/service"
 )
 
@@ -37,6 +38,7 @@ type UI struct {
 	theme *material.Theme
 	cfg   domain.AppConfig
 	check *service.Checker
+	ntf   *notify.Notifier
 
 	screen Screen
 
@@ -85,6 +87,7 @@ func New() *UI {
 		theme:       material.NewTheme(),
 		cfg:         domain.DefaultConfig(),
 		check:       service.NewChecker(data.NewClient(12 * time.Second)),
+		ntf:         notify.New(),
 		screen:      ScreenHome,
 		cities:      cities,
 		cityButtons: cityButtons,
@@ -234,7 +237,19 @@ func (u *UI) triggerTestNotification() {
 
 func (u *UI) pushNotification(message string) {
 	u.notificationID++
-	u.setStatus(fmt.Sprintf("Notification #%d: %s", u.notificationID, message), false)
+	if err := u.ntf.Send("Wetterabhaengig", message); err != nil {
+		u.setStatus(
+			fmt.Sprintf(
+				"Notification #%d (in-app only): %s | local delivery error: %v",
+				u.notificationID,
+				message,
+				err,
+			),
+			true,
+		)
+		return
+	}
+	u.setStatus(fmt.Sprintf("Notification #%d sent: %s", u.notificationID, message), false)
 }
 
 func (u *UI) recomputeRisk() {
