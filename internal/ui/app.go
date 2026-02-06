@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"image/color"
+	"strconv"
+	"strings"
 	"time"
 
 	"gioui.org/app"
@@ -15,7 +18,10 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 
+	"github.com/vitovt/wetterabhaengig/internal/data"
 	"github.com/vitovt/wetterabhaengig/internal/domain"
+	"github.com/vitovt/wetterabhaengig/internal/location"
+	"github.com/vitovt/wetterabhaengig/internal/service"
 )
 
 type Screen int
@@ -30,6 +36,7 @@ const (
 type UI struct {
 	theme *material.Theme
 	cfg   domain.AppConfig
+	check *service.Checker
 
 	screen Screen
 
@@ -43,27 +50,64 @@ type UI struct {
 	testPageTestBtn widget.Clickable
 	toggleNotifBtn  widget.Clickable
 
+	latEditor      widget.Editor
+	lonEditor      widget.Editor
+	cities         []location.City
+	cityButtons    []widget.Clickable
+	cityList       layout.List
+	selectedCity   int
+	locationLat    float64
+	locationLon    float64
+	applyCoordsBtn widget.Clickable
+
+	history     []service.Result
+	historyList layout.List
+
 	metrics      domain.Metrics
 	pressureRisk domain.RiskLevel
 	kIndexRisk   domain.RiskLevel
 	overallRisk  domain.RiskLevel
 
-	lastCheck      time.Time
-	statusMessage  string
-	notificationID int
+	lastCheck          time.Time
+	statusMessage      string
+	statusMessageError bool
+	notificationID     int
+	hasChecked         bool
+	autoCheckPending   bool
 }
 
 func New() *UI {
+	cities := location.DefaultEUCities()
+	cityButtons := make([]widget.Clickable, len(cities))
+	defaultLocation := cities[0]
+
 	u := &UI{
-		theme:  material.NewTheme(),
-		cfg:    domain.DefaultConfig(),
-		screen: ScreenHome,
-		metrics: domain.Metrics{
-			PressureDeltaHPa: 4.2,
-			KIndex:           3,
+		theme:       material.NewTheme(),
+		cfg:         domain.DefaultConfig(),
+		check:       service.NewChecker(data.NewClient(12 * time.Second)),
+		screen:      ScreenHome,
+		cities:      cities,
+		cityButtons: cityButtons,
+		cityList: layout.List{
+			Axis: layout.Vertical,
 		},
-		lastCheck: time.Now(),
+		selectedCity: defaultLocationIndex(defaultLocation, cities),
+		locationLat:  defaultLocation.Lat,
+		locationLon:  defaultLocation.Lon,
+		historyList: layout.List{
+			Axis: layout.Vertical,
+		},
+		metrics: domain.Metrics{
+			PressureDeltaHPa: 0,
+			KIndex:           0,
+		},
+		statusMessage:    "Ready. Press Check now to load live data.",
+		autoCheckPending: true,
 	}
+	u.latEditor.SingleLine = true
+	u.lonEditor.SingleLine = true
+	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
+	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
 	u.recomputeRisk()
 	return u
 }
@@ -86,6 +130,11 @@ func Run(window *app.Window) error {
 }
 
 func (u *UI) handleActions(gtx layout.Context) {
+	if u.autoCheckPending {
+		u.autoCheckPending = false
+		u.runCheckNow()
+	}
+
 	for u.navHome.Clicked(gtx) {
 		u.screen = ScreenHome
 	}
@@ -99,14 +148,21 @@ func (u *UI) handleActions(gtx layout.Context) {
 		u.screen = ScreenTest
 	}
 	for u.checkNowBtn.Clicked(gtx) {
-		u.simulateCheck()
+		u.runCheckNow()
+	}
+	for u.applyCoordsBtn.Clicked(gtx) {
+		if err := u.syncLocationFromEditors(); err != nil {
+			u.setStatus(err.Error(), true)
+		} else {
+			u.setStatus(fmt.Sprintf("Location updated: %.4f, %.4f", u.locationLat, u.locationLon), false)
+		}
 	}
 	for u.toggleNotifBtn.Clicked(gtx) {
 		u.cfg.Notifications.Enabled = !u.cfg.Notifications.Enabled
 		if u.cfg.Notifications.Enabled {
-			u.statusMessage = "Notifications enabled."
+			u.setStatus("Notifications enabled.", false)
 		} else {
-			u.statusMessage = "Notifications disabled."
+			u.setStatus("Notifications disabled.", false)
 		}
 	}
 	for u.settingsTestBtn.Clicked(gtx) {
@@ -115,25 +171,53 @@ func (u *UI) handleActions(gtx layout.Context) {
 	for u.testPageTestBtn.Clicked(gtx) {
 		u.triggerTestNotification()
 	}
+	for idx := range u.cityButtons {
+		for u.cityButtons[idx].Clicked(gtx) {
+			u.selectCity(idx)
+		}
+	}
 }
 
-func (u *UI) simulateCheck() {
+func (u *UI) runCheckNow() {
+	if err := u.syncLocationFromEditors(); err != nil {
+		u.setStatus(err.Error(), true)
+		return
+	}
+
 	oldRisk := u.overallRisk
-	now := time.Now()
-	u.lastCheck = now
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
 
-	// Initial deterministic simulation values until API integration is added.
-	u.metrics.PressureDeltaHPa = 2 + float64(now.Unix()%13)
-	u.metrics.KIndex = float64((now.Unix()/60)%8) + 1
-	u.recomputeRisk()
-
-	u.statusMessage = fmt.Sprintf(
-		"Check complete at %s. Risk=%s.",
-		now.Format("2006-01-02 15:04:05"),
-		u.overallRisk.String(),
+	result, err := u.check.Evaluate(
+		ctx,
+		u.cfg,
+		u.locationLat,
+		u.locationLon,
+		u.metrics,
 	)
 
-	if u.cfg.Notifications.Enabled && oldRisk != u.overallRisk {
+	u.metrics.PressureDeltaHPa = result.PressureDeltaHPa
+	u.metrics.KIndex = result.KIndex
+	u.pressureRisk = result.PressureRisk
+	u.kIndexRisk = result.KIndexRisk
+	u.overallRisk = result.OverallRisk
+	u.lastCheck = result.CheckedAt
+	u.hasChecked = true
+	u.history = append(u.history, result)
+
+	if err != nil {
+		u.setStatus(
+			fmt.Sprintf("Check completed with fallback data: %v", err),
+			true,
+		)
+	} else {
+		u.setStatus(
+			fmt.Sprintf("Check completed at %s. Risk=%s.", result.CheckedAt.Format("2006-01-02 15:04:05"), result.OverallRisk.String()),
+			false,
+		)
+	}
+
+	if u.cfg.Notifications.Enabled && oldRisk != u.overallRisk && len(u.history) > 1 {
 		u.pushNotification(
 			fmt.Sprintf(
 				"State changed: %s -> %s",
@@ -150,7 +234,7 @@ func (u *UI) triggerTestNotification() {
 
 func (u *UI) pushNotification(message string) {
 	u.notificationID++
-	u.statusMessage = fmt.Sprintf("Notification #%d: %s", u.notificationID, message)
+	u.setStatus(fmt.Sprintf("Notification #%d: %s", u.notificationID, message), false)
 }
 
 func (u *UI) recomputeRisk() {
@@ -213,7 +297,11 @@ func (u *UI) layoutHeader(gtx layout.Context) layout.Dimensions {
 			}
 			return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				text := material.Body2(u.theme, u.statusMessage)
-				text.Color = color.NRGBA{A: 255, R: 25, G: 100, B: 25}
+				if u.statusMessageError {
+					text.Color = color.NRGBA{A: 255, R: 155, G: 30, B: 30}
+				} else {
+					text.Color = color.NRGBA{A: 255, R: 25, G: 100, B: 25}
+				}
 				return text.Layout(gtx)
 			})
 		}),
@@ -301,6 +389,13 @@ func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			locationLine := material.Body1(
+				u.theme,
+				fmt.Sprintf("Location: %.4f, %.4f", u.locationLat, u.locationLon),
+			)
+			return locationLine.Layout(gtx)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			value := material.Body1(
 				u.theme,
 				fmt.Sprintf("Pressure delta: %.2f hPa | %.2f mmHg | %.2f inHg",
@@ -326,6 +421,9 @@ func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
 			return value.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !u.hasChecked {
+				return material.Body2(u.theme, "Last check: not yet completed").Layout(gtx)
+			}
 			value := material.Body2(
 				u.theme,
 				fmt.Sprintf("Last check: %s", u.lastCheck.Format("2006-01-02 15:04:05")),
@@ -343,11 +441,30 @@ func (u *UI) layoutHistory(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			text := material.Body1(
+			text := material.Body2(
 				u.theme,
-				"Chart implementation comes next. This view will render pressure and K-index with independent Y axes and threshold coloring.",
+				"Chart implementation comes next. History rows below already track pressure delta and K-index per check.",
 			)
 			return text.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if len(u.history) == 0 {
+				return material.Body1(u.theme, "No history yet. Run Check now.").Layout(gtx)
+			}
+			return u.historyList.Layout(gtx, len(u.history), func(gtx layout.Context, index int) layout.Dimensions {
+				item := u.history[len(u.history)-1-index]
+				line := fmt.Sprintf(
+					"%s | risk=%s | delta=%.2f hPa | K=%.1f",
+					item.CheckedAt.Format("2006-01-02 15:04:05"),
+					item.OverallRisk.String(),
+					item.PressureDeltaHPa,
+					item.KIndex,
+				)
+				return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return material.Body1(u.theme, line).Layout(gtx)
+				})
+			})
 		}),
 	)
 }
@@ -386,6 +503,42 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			txt := material.Body1(u.theme, "Location coordinates")
+			return txt.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					ed := material.Editor(u.theme, &u.latEditor, "Latitude")
+					return ed.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					ed := material.Editor(u.theme, &u.lonEditor, "Longitude")
+					return ed.Layout(gtx)
+				}),
+			)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			btn := material.Button(u.theme, &u.applyCoordsBtn, "Apply coordinates")
+			return btn.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			txt := material.Body2(
+				u.theme,
+				fmt.Sprintf("Selected city: %s", u.currentCityName()),
+			)
+			return txt.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutCitySelector(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			btn := material.Button(u.theme, &u.toggleNotifBtn, fmt.Sprintf("Toggle notifications (%s)", notificationState))
 			return btn.Layout(gtx)
 		}),
@@ -411,6 +564,13 @@ func (u *UI) layoutTest(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			txt := material.Body1(u.theme, u.currentNotificationText())
+			return txt.Layout(gtx)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			txt := material.Body2(
+				u.theme,
+				"This action must immediately create a local notification once platform notification backends are added.",
+			)
 			return txt.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
@@ -464,12 +624,88 @@ func (u *UI) currentNotificationText() string {
 	}
 
 	return fmt.Sprintf(
-		"Risk: %s. Pressure delta %.2f hPa. K-index %.1f. Out of range: %s.",
+		"Risk: %s. Pressure delta %.2f hPa. K-index %.1f. Out of range: %s. Location: %.4f, %.4f.",
 		u.overallRisk.String(),
 		u.metrics.PressureDeltaHPa,
 		u.metrics.KIndex,
 		outOfRange,
+		u.locationLat,
+		u.locationLon,
 	)
+}
+
+func (u *UI) layoutCitySelector(gtx layout.Context) layout.Dimensions {
+	maxHeight := gtx.Dp(unit.Dp(200))
+	gtx.Constraints.Max.Y = maxHeight
+	return u.cityList.Layout(gtx, len(u.cityButtons), func(gtx layout.Context, index int) layout.Dimensions {
+		enabledLabel := u.cities[index].Name
+		if index == u.selectedCity {
+			enabledLabel = "• " + enabledLabel
+		}
+		return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			btn := material.Button(u.theme, &u.cityButtons[index], enabledLabel)
+			return btn.Layout(gtx)
+		})
+	})
+}
+
+func (u *UI) selectCity(index int) {
+	if index < 0 || index >= len(u.cities) {
+		return
+	}
+	u.selectedCity = index
+	u.locationLat = u.cities[index].Lat
+	u.locationLon = u.cities[index].Lon
+	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
+	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
+	u.setStatus(
+		fmt.Sprintf("City selected: %s (%.4f, %.4f)", u.cities[index].Name, u.locationLat, u.locationLon),
+		false,
+	)
+}
+
+func (u *UI) syncLocationFromEditors() error {
+	latText := strings.TrimSpace(u.latEditor.Text())
+	lonText := strings.TrimSpace(u.lonEditor.Text())
+	lat, err := strconv.ParseFloat(latText, 64)
+	if err != nil {
+		return fmt.Errorf("invalid latitude: %q", latText)
+	}
+	lon, err := strconv.ParseFloat(lonText, 64)
+	if err != nil {
+		return fmt.Errorf("invalid longitude: %q", lonText)
+	}
+	if lat < -90 || lat > 90 {
+		return fmt.Errorf("latitude must be in [-90, 90]")
+	}
+	if lon < -180 || lon > 180 {
+		return fmt.Errorf("longitude must be in [-180, 180]")
+	}
+
+	u.locationLat = lat
+	u.locationLon = lon
+	return nil
+}
+
+func (u *UI) currentCityName() string {
+	if u.selectedCity < 0 || u.selectedCity >= len(u.cities) {
+		return "custom"
+	}
+	return u.cities[u.selectedCity].Name
+}
+
+func (u *UI) setStatus(message string, isError bool) {
+	u.statusMessage = message
+	u.statusMessageError = isError
+}
+
+func defaultLocationIndex(selected location.City, cities []location.City) int {
+	for i := range cities {
+		if cities[i].Name == selected.Name {
+			return i
+		}
+	}
+	return 0
 }
 
 func thresholdLabel(level domain.RiskLevel, t domain.PressureThresholds) float64 {
