@@ -1160,6 +1160,20 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 	u.settingsNotifSwitch.Value = u.settingsNotificationsEnabled
 	u.settingsBgSwitch.Value = u.settingsRunWhenClosed
 	u.settingsTimeSwitch.Value = u.settingsTimeFormat == "24h"
+	stateOn := u.tr("common.on", "ON")
+	stateOff := u.tr("common.off", "OFF")
+	notificationState := stateOff
+	if u.settingsNotificationsEnabled {
+		notificationState = stateOn
+	}
+	backgroundState := stateOff
+	if u.settingsRunWhenClosed {
+		backgroundState = stateOn
+	}
+	timeState := u.tr("settings.time_12h", "12h")
+	if u.settingsTimeSwitch.Value {
+		timeState = u.tr("settings.time_24h", "24h")
+	}
 
 	return u.settingsList.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 		content := gtx
@@ -1337,16 +1351,35 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					txt := material.Body1(u.theme, u.trf("settings.time_format", "Time format: %s", u.settingsTimeFormat))
+					txt := material.Body1(u.theme, u.tr("settings.time_format_title", "Time format"))
 					return txt.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					sw := material.Switch(u.theme, &u.settingsTimeSwitch, u.tr("settings.time_format_switch", "Use 24h format (off = 12h)"))
+					txt := material.Body2(u.theme, u.trf("settings.current_state", "Current: %s", timeState))
+					txt.Color = u.mutedTextColor()
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					sw := material.Switch(u.theme, &u.settingsTimeSwitch, u.tr("settings.time_format_switch", "Use 24-hour format"))
 					return sw.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body2(u.theme, u.tr("settings.time_format_help", "ON means 24-hour clock. OFF means 12-hour AM/PM clock."))
+					txt.Color = u.mutedTextColor()
+					return txt.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					sw := material.Switch(u.theme, &u.settingsBgSwitch, u.tr("settings.background_checks_closed", "Run checks in background when app is closed (Android)"))
+					txt := material.Body1(u.theme, u.tr("settings.background_checks_title", "Background checks when app is closed"))
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body2(u.theme, u.trf("settings.current_state", "Current: %s", backgroundState))
+					txt.Color = u.mutedTextColor()
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					sw := material.Switch(u.theme, &u.settingsBgSwitch, u.tr("settings.background_checks_switch", "Run scheduled checks while app is closed (Android)"))
 					return sw.Layout(gtx)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1358,8 +1391,22 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					sw := material.Switch(u.theme, &u.settingsNotifSwitch, u.tr("details.notifications", "Notifications"))
+					txt := material.Body1(u.theme, u.tr("settings.notifications_title", "Notifications"))
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body2(u.theme, u.trf("settings.current_state", "Current: %s", notificationState))
+					txt.Color = u.mutedTextColor()
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					sw := material.Switch(u.theme, &u.settingsNotifSwitch, u.tr("settings.notifications_switch", "Enable local notifications"))
 					return sw.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body2(u.theme, u.tr("settings.notifications_help", "When enabled, the app sends a local notification when risk level changes."))
+					txt.Color = u.mutedTextColor()
+					return txt.Layout(gtx)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
