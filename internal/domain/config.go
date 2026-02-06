@@ -65,6 +65,7 @@ type AppConfig struct {
 	Retention     RetentionSettings
 	Notifications NotificationSettings
 	Units         UnitSettings
+	ThemeMode     string
 	Languages     []string
 	Language      string
 }
@@ -102,6 +103,7 @@ func DefaultConfig() AppConfig {
 			PressureUnit: "hPa",
 			TimeFormat:   "24h",
 		},
+		ThemeMode: "system",
 		Languages: []string{"system", "en", "de", "uk"},
 		Language:  "system",
 	}
@@ -199,6 +201,11 @@ func ValidateConfig(cfg AppConfig) error {
 	case "24h", "12h":
 	default:
 		return fmt.Errorf("unsupported time format: %s", cfg.Units.TimeFormat)
+	}
+	switch cfg.ThemeMode {
+	case "system", "light", "dark":
+	default:
+		return fmt.Errorf("unsupported theme mode: %s", cfg.ThemeMode)
 	}
 	if cfg.Language == "" {
 		return fmt.Errorf("language must not be empty")

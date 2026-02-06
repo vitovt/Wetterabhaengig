@@ -13,14 +13,15 @@ import (
 )
 
 type State struct {
-	Config       domain.AppConfig `json:"config"`
-	LocationLat  float64          `json:"location_lat"`
-	LocationLon  float64          `json:"location_lon"`
-	SelectedCity int              `json:"selected_city"`
-	History      []service.Result `json:"history"`
-	Metrics      domain.Metrics   `json:"metrics"`
-	LastCheckUTC int64            `json:"last_check_utc"`
-	HasChecked   bool             `json:"has_checked"`
+	Config              domain.AppConfig `json:"config"`
+	LocationLat         float64          `json:"location_lat"`
+	LocationLon         float64          `json:"location_lon"`
+	SelectedCity        int              `json:"selected_city"`
+	History             []service.Result `json:"history"`
+	Metrics             domain.Metrics   `json:"metrics"`
+	LastCheckUTC        int64            `json:"last_check_utc"`
+	HasChecked          bool             `json:"has_checked"`
+	HomeDetailsExpanded bool             `json:"home_details_expanded"`
 }
 
 type Store struct {

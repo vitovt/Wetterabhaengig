@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
 	"os"
 	"runtime"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -63,12 +65,16 @@ type UI struct {
 	menuScrimBtn widget.Clickable
 	menuOpen     bool
 
-	checkNowBtn       widget.Clickable
-	settingsTestBtn   widget.Clickable
-	testPageTestBtn   widget.Clickable
-	toggleNotifBtn    widget.Clickable
-	toggleBgChecksBtn widget.Clickable
-	applySettingsBtn  widget.Clickable
+	checkNowBtn         widget.Clickable
+	homeCheckNowBtn     widget.Clickable
+	settingsTestBtn     widget.Clickable
+	testPageTestBtn     widget.Clickable
+	toggleNotifBtn      widget.Clickable
+	toggleBgChecksBtn   widget.Clickable
+	applySettingsBtn    widget.Clickable
+	homeDetailsBtn      widget.Clickable
+	shortcutHistoryBtn  widget.Clickable
+	shortcutSettingsBtn widget.Clickable
 
 	setPressureMediumEditor widget.Editor
 	setPressureHighEditor   widget.Editor
@@ -84,12 +90,16 @@ type UI struct {
 	setUnitInHgBtn       widget.Clickable
 	setTime24Btn         widget.Clickable
 	setTime12Btn         widget.Clickable
+	setThemeSystemBtn    widget.Clickable
+	setThemeLightBtn     widget.Clickable
+	setThemeDarkBtn      widget.Clickable
 	getGPSBtn            widget.Clickable
 	languageButtons      []widget.Clickable
 	languageToggleBtn    widget.Clickable
 	languageSearchEditor widget.Editor
 	languageDropdownOpen bool
 	settingsLanguage     string
+	settingsThemeMode    string
 
 	latEditor         widget.Editor
 	lonEditor         widget.Editor
@@ -107,6 +117,7 @@ type UI struct {
 
 	history       []service.Result
 	historyList   layout.List
+	homeList      layout.List
 	settingsList  layout.List
 	locationList  layout.List
 	settingsDirty bool
@@ -129,6 +140,8 @@ type UI struct {
 	hasChecked           bool
 	autoCheckPending     bool
 	nextScheduledCheck   time.Time
+	lastRiskUpdate       time.Time
+	homeDetailsExpanded  bool
 	platformLanguageInit bool
 	lastScreen           Screen
 }
@@ -157,6 +170,9 @@ func New() *UI {
 		historyList: layout.List{
 			Axis: layout.Vertical,
 		},
+		homeList: layout.List{
+			Axis: layout.Vertical,
+		},
 		settingsList: layout.List{
 			Axis: layout.Vertical,
 		},
@@ -169,6 +185,7 @@ func New() *UI {
 		},
 		statusMessage:    "Ready. Press Check now to load live data.",
 		autoCheckPending: true,
+		lastRiskUpdate:   time.Now(),
 		lastScreen:       ScreenHome,
 	}
 
@@ -278,6 +295,19 @@ func (u *UI) handleActions(gtx layout.Context) {
 			u.menuOpen = false
 		}
 	}
+	for u.homeCheckNowBtn.Clicked(gtx) {
+		u.runCheckNow()
+	}
+	for u.homeDetailsBtn.Clicked(gtx) {
+		u.homeDetailsExpanded = !u.homeDetailsExpanded
+		u.saveState()
+	}
+	for u.shortcutHistoryBtn.Clicked(gtx) {
+		u.setScreen(ScreenHistory, compact)
+	}
+	for u.shortcutSettingsBtn.Clicked(gtx) {
+		u.setScreen(ScreenSettings, compact)
+	}
 	for u.applyCoordsBtn.Clicked(gtx) {
 		if !u.locationDirty {
 			continue
@@ -347,6 +377,15 @@ func (u *UI) handleActions(gtx layout.Context) {
 	for u.setTime12Btn.Clicked(gtx) {
 		u.settingsTimeFormat = "12h"
 	}
+	for u.setThemeSystemBtn.Clicked(gtx) {
+		u.settingsThemeMode = "system"
+	}
+	for u.setThemeLightBtn.Clicked(gtx) {
+		u.settingsThemeMode = "light"
+	}
+	for u.setThemeDarkBtn.Clicked(gtx) {
+		u.settingsThemeMode = "dark"
+	}
 	for u.getGPSBtn.Clicked(gtx) {
 		u.getCurrentLocationViaGPS()
 	}
@@ -408,6 +447,7 @@ func (u *UI) runCheck(applyEditorLocation bool, reason string) {
 	u.kIndexRisk = result.KIndexRisk
 	u.overallRisk = result.OverallRisk
 	u.lastCheck = result.CheckedAt
+	u.lastRiskUpdate = time.Now()
 	u.hasChecked = true
 	u.history = append(u.history, result)
 	u.pruneHistory()
@@ -452,18 +492,11 @@ func (u *UI) pushNotification(message string) {
 	u.notificationID++
 	if err := u.ntf.Send(u.tr("app.title", "Wetterabhaengig"), message); err != nil {
 		u.setStatus(
-			u.trf(
-				"status.notification_local_error",
-				"Notification #%d (in-app only): %s | local delivery error: %v",
-				u.notificationID,
-				message,
-				err,
-			),
+			u.trf("status.notification_delivery_error", "Notification delivery error: %v", err),
 			true,
 		)
 		return
 	}
-	u.setStatus(u.trf("status.notification_sent", "Notification #%d sent: %s", u.notificationID, message), false)
 }
 
 func (u *UI) recomputeRisk() {
@@ -473,6 +506,13 @@ func (u *UI) recomputeRisk() {
 }
 
 func (u *UI) layout(gtx layout.Context) layout.Dimensions {
+	u.applyThemePalette()
+	paint.FillShape(
+		gtx.Ops,
+		u.theme.Palette.Bg,
+		clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op(),
+	)
+
 	compact := u.isCompactLayout(gtx)
 
 	inset := layout.UniformInset(unit.Dp(12))
@@ -523,13 +563,13 @@ func (u *UI) isCompactLayout(gtx layout.Context) bool {
 func (u *UI) layoutCompactTopBar(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.menuOpenBtn, u.tr("menu.menu", "Menu"))
+			btn := material.Button(u.theme, &u.menuOpenBtn, "☰")
 			return btn.Layout(gtx)
 		}),
 		layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			label := material.Body1(u.theme, u.trf("menu.screen", "Screen: %s", u.screenName()))
-			label.Color = color.NRGBA{A: 255, R: 90, G: 90, B: 90}
+			label := material.H6(u.theme, u.tr("app.title", "Wetterabhaengig"))
+			label.Alignment = text.Middle
 			return label.Layout(gtx)
 		}),
 	)
@@ -598,7 +638,7 @@ func (u *UI) layoutHeader(gtx layout.Context) layout.Dimensions {
 				u.theme,
 				u.tr("app.subtitle", "Weather risk monitoring with traffic light status and numeric context."),
 			)
-			sub.Color = color.NRGBA{A: 255, R: 70, G: 70, B: 70}
+			sub.Color = u.mutedTextColor()
 			return sub.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -682,80 +722,321 @@ func (u *UI) layoutCurrentScreen(gtx layout.Context) layout.Dimensions {
 }
 
 func (u *UI) layoutHome(gtx layout.Context) layout.Dimensions {
+	const sections = 4
+	return u.homeList.Layout(gtx, sections, func(gtx layout.Context, index int) layout.Dimensions {
+		switch index {
+		case 0:
+			return layout.Inset{Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Center.Layout(gtx, u.layoutTrafficLight)
+			})
+		case 1:
+			return layout.Inset{Bottom: unit.Dp(12)}.Layout(gtx, u.layoutHomeSummaryCard)
+		case 2:
+			return layout.Inset{Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				btn := material.Button(u.theme, &u.homeCheckNowBtn, u.tr("buttons.check_now", "Check now"))
+				return btn.Layout(gtx)
+			})
+		default:
+			return u.layoutHomeDetails(gtx)
+		}
+	})
+}
+
+func (u *UI) layoutHomeSummaryCard(gtx layout.Context) layout.Dimensions {
+	return widget.Border{
+		Color:        u.subtleBorderColor(),
+		CornerRadius: unit.Dp(8),
+		Width:        unit.Dp(1),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					title := material.H6(u.theme, u.trf("home.overall_risk", "Overall risk: %s", u.riskLabel(u.overallRisk)))
+					return title.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					text := material.Body1(u.theme, u.riskMeaningText())
+					text.Color = u.mutedTextColor()
+					return text.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					h := material.Body2(u.theme, u.tr("home.metric_pressure_header", "Atmosphere pressure"))
+					h.Color = u.mutedTextColor()
+					return h.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					primaryPressure, _ := domain.ConvertPressureDelta(u.metrics.PressureDeltaHPa, u.cfg.Units.PressureUnit)
+					line := u.trf(
+						"home.metric_pressure_line",
+						"Delta Pressure (%s): %s -- %s",
+						u.pressureWindowLabel(),
+						u.valueWithUnit(primaryPressure, u.cfg.Units.PressureUnit),
+						u.pressureBandLabel(),
+					)
+					return material.Body1(u.theme, line).Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					h := material.Body2(u.theme, u.tr("home.metric_k_header", "Solar activity"))
+					h.Color = u.mutedTextColor()
+					return h.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					line := u.trf(
+						"home.metric_k_line",
+						"K-index: %d -- %s",
+						int(math.Round(u.metrics.KIndex)),
+						u.kBandLabel(),
+					)
+					return material.Body1(u.theme, line).Layout(gtx)
+				}),
+			)
+		})
+	})
+}
+
+func (u *UI) layoutHomeDetails(gtx layout.Context) layout.Dimensions {
+	lastCheckShort := "-"
+	if !u.lastCheck.IsZero() {
+		lastCheckShort = u.formatShortTime(u.lastCheck)
+	}
+
+	headerLabel := u.tr("details.title", "Details")
+	chevron := "▾"
+	if u.homeDetailsExpanded {
+		chevron = "▴"
+	}
+
+	return widget.Border{
+		Color:        u.subtleBorderColor(),
+		CornerRadius: unit.Dp(8),
+		Width:        unit.Dp(1),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.UniformInset(unit.Dp(10)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					minH := gtx.Dp(unit.Dp(44))
+					if gtx.Constraints.Min.Y < minH {
+						gtx.Constraints.Min.Y = minH
+					}
+					return u.homeDetailsBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+								title := material.Body1(u.theme, headerLabel)
+								return title.Layout(gtx)
+							}),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								snippet := material.Body2(u.theme, u.trf("details.header_snippet", "Last check: %s", lastCheckShort))
+								snippet.Color = u.mutedTextColor()
+								return snippet.Layout(gtx)
+							}),
+							layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								s := material.Body1(u.theme, chevron)
+								s.Color = u.mutedTextColor()
+								return s.Layout(gtx)
+							}),
+						)
+					})
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if !u.homeDetailsExpanded {
+						primaryPressure, _ := domain.ConvertPressureDelta(u.metrics.PressureDeltaHPa, u.cfg.Units.PressureUnit)
+						preview := u.trf(
+							"details.preview",
+							"Delta Pressure: %.1f %s • K-index: %d • Next: %s",
+							primaryPressure,
+							u.cfg.Units.PressureUnit,
+							int(math.Round(u.metrics.KIndex)),
+							u.nextCheckDisplayShort(),
+						)
+						txt := material.Body2(u.theme, preview)
+						txt.Color = u.mutedTextColor()
+						return txt.Layout(gtx)
+					}
+
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(u.layoutDetailsChecksGroup),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+						layout.Rigid(u.layoutDetailsTriggerGroup),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+						layout.Rigid(u.layoutDetailsMeasurementsGroup),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+						layout.Rigid(u.layoutDetailsLocationGroup),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+						layout.Rigid(u.layoutDetailsShortcutsGroup),
+					)
+				}),
+			)
+		})
+	})
+}
+
+func (u *UI) layoutDetailsChecksGroup(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(u.layoutTrafficLight),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			label := material.H6(u.theme, u.trf("home.overall_risk", "Overall risk: %s", u.riskLabel(u.overallRisk)))
-			return label.Layout(gtx)
+			return u.layoutGroupTitle(gtx, u.tr("group.checks", "Checks & schedule"))
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			text := material.Body1(u.theme, u.currentNotificationText())
-			return text.Layout(gtx)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			locationLine := material.Body1(
-				u.theme,
-				u.trf("home.location", "Location: %.4f, %.4f", u.locationLat, u.locationLon),
-			)
-			return locationLine.Layout(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			primaryPressure, _ := domain.ConvertPressureDelta(u.metrics.PressureDeltaHPa, u.cfg.Units.PressureUnit)
-			value := material.Body1(
-				u.theme,
-				u.trf("home.pressure_delta", "Pressure delta: %.2f %s | %.2f hPa | %.2f mmHg | %.2f inHg",
-					primaryPressure,
-					u.cfg.Units.PressureUnit,
-					u.metrics.PressureDeltaHPa,
-					domain.PressureDeltaMMHg(u.metrics.PressureDeltaHPa),
-					domain.PressureDeltaInHg(u.metrics.PressureDeltaHPa),
-				),
-			)
-			return value.Layout(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			value := material.Body1(
-				u.theme,
-				u.trf("home.k_index", "K-index: %.1f", u.metrics.KIndex),
-			)
-			return value.Layout(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			value := material.Body1(
-				u.theme,
-				u.trf(
-					"home.source_risks",
-					"Source risks: pressure=%s, k-index=%s | Time format: %s",
-					u.riskLabel(u.pressureRisk),
-					u.riskLabel(u.kIndexRisk),
-					u.cfg.Units.TimeFormat,
-				),
-			)
-			return value.Layout(gtx)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if !u.hasChecked {
-				return material.Body2(u.theme, u.tr("home.last_check_none", "Last check: not yet completed")).Layout(gtx)
+			lastCheck := u.tr("details.none", "None")
+			if !u.lastCheck.IsZero() {
+				lastCheck = u.formatTime(u.lastCheck)
 			}
-			value := material.Body2(
-				u.theme,
-				u.trf("home.last_check", "Last check: %s", u.formatTime(u.lastCheck)),
-			)
-			return value.Layout(gtx)
+			return u.layoutDetailRow(gtx, u.tr("details.lastCheck", "Last check"), lastCheck)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if u.nextScheduledCheck.IsZero() {
-				return layout.Dimensions{}
+			return u.layoutDetailRow(gtx, u.tr("details.nextCheck", "Next scheduled check"), u.nextCheckDisplay())
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutDetailRow(gtx, u.tr("details.interval", "Check interval"), u.trf("details.interval_minutes", "%d min", u.cfg.Schedule.PeriodMinutes))
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutDetailRow(gtx, u.tr("details.timeFormat", "Time format"), u.cfg.Units.TimeFormat)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			state := u.tr("common.off", "OFF")
+			if u.cfg.Notifications.Enabled {
+				state = u.tr("common.on", "ON")
 			}
-			value := material.Body2(
-				u.theme,
-				u.trf("home.next_scheduled", "Next scheduled check: %s", u.formatTime(u.nextScheduledCheck)),
-			)
-			return value.Layout(gtx)
+			return u.layoutDetailRow(gtx, u.tr("details.notifications", "Notifications"), state)
 		}),
 	)
+}
+
+func (u *UI) layoutDetailsTriggerGroup(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutGroupTitle(gtx, u.tr("group.trigger", "Trigger"))
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutDetailRow(gtx, u.tr("details.primaryDriver", "Primary driver"), u.primaryDriverText())
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			drivers := u.trf(
+				"details.drivers_value",
+				"Pressure: %s • K-index: %s",
+				u.riskLabel(u.pressureRisk),
+				u.riskLabel(u.kIndexRisk),
+			)
+			return u.layoutDetailRow(gtx, u.tr("details.drivers", "Drivers"), drivers)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutDetailRow(gtx, u.tr("details.outOfRange", "Out of range"), u.outOfRangeDetailsText())
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			medium, _ := domain.ConvertPressureDelta(u.cfg.Pressure.Medium, u.cfg.Units.PressureUnit)
+			high, _ := domain.ConvertPressureDelta(u.cfg.Pressure.High, u.cfg.Units.PressureUnit)
+			critical, _ := domain.ConvertPressureDelta(u.cfg.Pressure.Crit, u.cfg.Units.PressureUnit)
+			value := u.trf(
+				"details.pressureThresholdsValue",
+				"Medium > %.1f %s, High > %.1f %s, Critical > %.1f %s",
+				medium, u.cfg.Units.PressureUnit,
+				high, u.cfg.Units.PressureUnit,
+				critical, u.cfg.Units.PressureUnit,
+			)
+			return u.layoutDetailRow(gtx, u.tr("details.pressureThresholds", "Delta Pressure thresholds"), value)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			value := u.trf(
+				"details.kThresholdsValue",
+				"Medium >= %.1f, High >= %.1f, Critical >= %.1f",
+				u.cfg.KIndex.Medium,
+				u.cfg.KIndex.High,
+				u.cfg.KIndex.Crit,
+			)
+			return u.layoutDetailRow(gtx, u.tr("details.kThresholds", "K-index thresholds"), value)
+		}),
+	)
+}
+
+func (u *UI) layoutDetailsMeasurementsGroup(gtx layout.Context) layout.Dimensions {
+	primaryPressure, _ := domain.ConvertPressureDelta(u.metrics.PressureDeltaHPa, u.cfg.Units.PressureUnit)
+	measurementValue := u.trf(
+		"details.measure_pressure",
+		"%s (%s): %s (%s mmHg • %s inHg)",
+		u.tr("details.pressure_delta_label", "Delta Pressure"),
+		u.pressureWindowLabel(),
+		u.valueWithUnit(primaryPressure, u.cfg.Units.PressureUnit),
+		u.valueWithUnit(domain.PressureDeltaMMHg(u.metrics.PressureDeltaHPa), "mmHg"),
+		u.valueWithUnit(domain.PressureDeltaInHg(u.metrics.PressureDeltaHPa), "inHg"),
+	)
+
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutGroupTitle(gtx, u.tr("group.measurements", "Measurements"))
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutDetailRow(gtx, u.tr("details.measurements", "Measurements"), measurementValue)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			kValue := u.trf(
+				"details.measure_k",
+				"K-index: %d (%s)",
+				int(math.Round(u.metrics.KIndex)),
+				u.kBandLabel(),
+			)
+			return u.layoutDetailRow(gtx, u.tr("details.kIndex", "K-index"), kValue)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutDetailRow(gtx, u.tr("details.dataSource", "Data source"), u.tr("details.dataSourceValue", "Open-Meteo + NOAA SWPC"))
+		}),
+	)
+}
+
+func (u *UI) layoutDetailsLocationGroup(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutGroupTitle(gtx, u.tr("group.location", "Location"))
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			locationName := u.currentCityName()
+			return u.layoutDetailRow(gtx, u.tr("group.location", "Location"), locationName)
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutDetailRow(gtx, u.tr("details.coordinates", "Coordinates"), u.trf("details.coordinates_value", "%.4f, %.4f", u.locationLat, u.locationLon))
+		}),
+	)
+}
+
+func (u *UI) layoutDetailsShortcutsGroup(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return u.layoutGroupTitle(gtx, u.tr("group.shortcuts", "Shortcuts"))
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			btn := material.Button(u.theme, &u.shortcutHistoryBtn, u.tr("shortcut.history", "View history chart"))
+			return btn.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			btn := material.Button(u.theme, &u.shortcutSettingsBtn, u.tr("shortcut.settings", "Configure thresholds"))
+			return btn.Layout(gtx)
+		}),
+	)
+}
+
+func (u *UI) layoutGroupTitle(gtx layout.Context, text string) layout.Dimensions {
+	label := material.Body1(u.theme, text)
+	label.Color = u.mutedTextColor()
+	return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, label.Layout)
+}
+
+func (u *UI) layoutDetailRow(gtx layout.Context, label, value string) layout.Dimensions {
+	return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween}.Layout(gtx,
+			layout.Flexed(0.4, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Body2(u.theme, label)
+				lbl.Color = u.mutedTextColor()
+				return lbl.Layout(gtx)
+			}),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
+			layout.Flexed(0.6, func(gtx layout.Context) layout.Dimensions {
+				return material.Body2(u.theme, value).Layout(gtx)
+			}),
+		)
+	})
 }
 
 func (u *UI) layoutHistory(gtx layout.Context) layout.Dimensions {
@@ -1035,6 +1316,29 @@ func (u *UI) layoutSettings(gtx layout.Context) layout.Dimensions {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					txt := material.Body1(u.theme, u.tr("settings.theme_mode", "Theme mode"))
+					return txt.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							btn := material.Button(u.theme, &u.setThemeSystemBtn, selectedLabel(u.settingsThemeMode == "system", u.tr("settings.theme_system", "System default")))
+							return btn.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							btn := material.Button(u.theme, &u.setThemeLightBtn, selectedLabel(u.settingsThemeMode == "light", u.tr("settings.theme_light", "Light")))
+							return btn.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							btn := material.Button(u.theme, &u.setThemeDarkBtn, selectedLabel(u.settingsThemeMode == "dark", u.tr("settings.theme_dark", "Dark")))
+							return btn.Layout(gtx)
+						}),
+					)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return u.layoutPrimaryButton(gtx, &u.applySettingsBtn, u.tr("buttons.save_settings", "Save settings"), u.settingsDirty)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
@@ -1209,7 +1513,33 @@ func (u *UI) layoutTest(gtx layout.Context) layout.Dimensions {
 }
 
 func (u *UI) layoutTrafficLight(gtx layout.Context) layout.Dimensions {
-	size := gtx.Dp(unit.Dp(126))
+	baseSize := float32(gtx.Dp(unit.Dp(126)))
+	scale := float32(1.0)
+	if !u.lastRiskUpdate.IsZero() {
+		age := time.Since(u.lastRiskUpdate)
+		if age < 500*time.Millisecond {
+			t := float32(age) / float32(500*time.Millisecond)
+			if t < 0 {
+				t = 0
+			}
+			if t > 1 {
+				t = 1
+			}
+			scale *= 0.9 + 0.1*t
+			gtx.Execute(op.InvalidateCmd{At: time.Now().Add(16 * time.Millisecond)})
+		}
+	}
+	if u.overallRisk == domain.RiskCritical {
+		phase := float64(time.Now().UnixNano()%int64(1300*time.Millisecond)) / float64(1300*time.Millisecond)
+		pulse := 0.95 + 0.05*float32((math.Sin(2*math.Pi*phase)+1)/2)
+		scale *= pulse
+		gtx.Execute(op.InvalidateCmd{At: time.Now().Add(16 * time.Millisecond)})
+	}
+
+	size := int(baseSize * scale)
+	if size < gtx.Dp(unit.Dp(96)) {
+		size = gtx.Dp(unit.Dp(96))
+	}
 	dims := image.Pt(size, size)
 	shape := clip.UniformRRect(image.Rectangle{Max: dims}, size/2)
 	paint.FillShape(gtx.Ops, u.trafficLightColor(), shape.Op(gtx.Ops))
@@ -1232,21 +1562,30 @@ func riskColor(level domain.RiskLevel) color.NRGBA {
 }
 
 func (u *UI) trafficLightColor() color.NRGBA {
-	switch u.overallRisk {
-	case domain.RiskLow:
-		return riskColor(domain.RiskLow)
-	case domain.RiskMedium:
-		return riskColor(domain.RiskMedium)
-	case domain.RiskHigh:
-		return riskColor(domain.RiskHigh)
-	case domain.RiskCritical:
-		if time.Now().Unix()%2 == 0 {
-			return color.NRGBA{A: 255, R: 245, G: 25, B: 25}
-		}
-		return riskColor(domain.RiskCritical)
-	default:
-		return color.NRGBA{A: 255, R: 120, G: 120, B: 120}
+	target := riskColor(u.overallRisk)
+	if u.overallRisk == domain.RiskLow || u.overallRisk == domain.RiskMedium || u.overallRisk == domain.RiskHigh || u.overallRisk == domain.RiskCritical {
+		target = riskColor(u.overallRisk)
+	} else {
+		target = color.NRGBA{A: 255, R: 120, G: 120, B: 120}
 	}
+	if u.lastRiskUpdate.IsZero() {
+		return target
+	}
+
+	age := time.Since(u.lastRiskUpdate)
+	if age >= 550*time.Millisecond {
+		return target
+	}
+
+	t := float64(age) / float64(550*time.Millisecond)
+	if t < 0 {
+		t = 0
+	}
+	if t > 1 {
+		t = 1
+	}
+	start := color.NRGBA{A: 255, R: 150, G: 150, B: 150}
+	return blendColor(start, target, float32(t))
 }
 
 func (u *UI) currentNotificationText() string {
@@ -1261,18 +1600,18 @@ func (u *UI) currentNotificationText() string {
 	} else if u.kIndexRisk != domain.RiskLow {
 		outOfRange = u.trf(
 			"notification.out_kindex",
-			"k-index %.1f (>=%.1f)",
-			u.metrics.KIndex,
+			"k-index %d (>=%.1f)",
+			int(math.Round(u.metrics.KIndex)),
 			thresholdLabelK(u.kIndexRisk, u.cfg.KIndex),
 		)
 	}
 
 	return u.trf(
 		"notification.payload",
-		"Risk: %s. Pressure delta %.2f hPa. K-index %.1f. Out of range: %s. Location: %.4f, %.4f.",
+		"Risk: %s. Pressure delta %.2f hPa. K-index %d. Out of range: %s. Location: %.4f, %.4f.",
 		u.riskLabel(u.overallRisk),
 		u.metrics.PressureDeltaHPa,
-		u.metrics.KIndex,
+		int(math.Round(u.metrics.KIndex)),
 		outOfRange,
 		u.locationLat,
 		u.locationLon,
@@ -1558,6 +1897,10 @@ func (u *UI) resetSettingsDraft() {
 	u.settingsTimeFormat = u.cfg.Units.TimeFormat
 	u.settingsNotificationsEnabled = u.cfg.Notifications.Enabled
 	u.settingsRunWhenClosed = u.cfg.Schedule.RunWhenClosed
+	u.settingsThemeMode = strings.TrimSpace(u.cfg.ThemeMode)
+	if u.settingsThemeMode == "" {
+		u.settingsThemeMode = "system"
+	}
 	u.settingsLanguage = strings.TrimSpace(u.cfg.Language)
 	if u.settingsLanguage == "" {
 		u.settingsLanguage = "system"
@@ -1620,6 +1963,9 @@ func (u *UI) isSettingsDirty() bool {
 		return true
 	}
 	if u.settingsRunWhenClosed != u.cfg.Schedule.RunWhenClosed {
+		return true
+	}
+	if strings.TrimSpace(u.settingsThemeMode) != strings.TrimSpace(u.cfg.ThemeMode) {
 		return true
 	}
 	if strings.TrimSpace(u.settingsLanguage) != strings.TrimSpace(u.cfg.Language) {
@@ -1723,6 +2069,10 @@ func (u *UI) applySettingsFromEditors() error {
 	if cfg.Units.TimeFormat == "" {
 		cfg.Units.TimeFormat = "24h"
 	}
+	cfg.ThemeMode = strings.TrimSpace(u.settingsThemeMode)
+	if cfg.ThemeMode == "" {
+		cfg.ThemeMode = "system"
+	}
 	cfg.Notifications.Enabled = u.settingsNotificationsEnabled
 	cfg.Language = strings.TrimSpace(u.settingsLanguage)
 	if cfg.Language == "" {
@@ -1817,6 +2167,9 @@ func (u *UI) loadState() {
 	if u.cfg.Units.TimeFormat == "" {
 		u.cfg.Units.TimeFormat = "24h"
 	}
+	if u.cfg.ThemeMode == "" {
+		u.cfg.ThemeMode = "system"
+	}
 	if u.cfg.Language == "" {
 		u.cfg.Language = "system"
 	}
@@ -1843,6 +2196,7 @@ func (u *UI) loadState() {
 	u.metrics = state.Metrics
 	u.history = state.History
 	u.hasChecked = state.HasChecked
+	u.homeDetailsExpanded = state.HomeDetailsExpanded
 	if state.LastCheckUTC > 0 {
 		u.lastCheck = time.Unix(state.LastCheckUTC, 0).UTC()
 		u.scheduleNextCheck(u.lastCheck)
@@ -1863,14 +2217,15 @@ func (u *UI) saveState() {
 	}
 
 	_ = u.store.Save(storage.State{
-		Config:       u.cfg,
-		LocationLat:  u.locationLat,
-		LocationLon:  u.locationLon,
-		SelectedCity: u.selectedCity,
-		History:      u.history,
-		Metrics:      u.metrics,
-		LastCheckUTC: lastCheckUTC,
-		HasChecked:   u.hasChecked,
+		Config:              u.cfg,
+		LocationLat:         u.locationLat,
+		LocationLon:         u.locationLon,
+		SelectedCity:        u.selectedCity,
+		History:             u.history,
+		Metrics:             u.metrics,
+		LastCheckUTC:        lastCheckUTC,
+		HasChecked:          u.hasChecked,
+		HomeDetailsExpanded: u.homeDetailsExpanded,
 	})
 }
 
@@ -1881,6 +2236,180 @@ func defaultLocationIndex(selected location.City, cities []location.City) int {
 		}
 	}
 	return 0
+}
+
+func (u *UI) applyThemePalette() {
+	switch u.effectiveThemeMode() {
+	case "dark":
+		u.theme.Palette = material.Palette{
+			Bg:         color.NRGBA{A: 255, R: 22, G: 24, B: 28},
+			Fg:         color.NRGBA{A: 255, R: 230, G: 233, B: 237},
+			ContrastBg: color.NRGBA{A: 255, R: 62, G: 110, B: 195},
+			ContrastFg: color.NRGBA{A: 255, R: 255, G: 255, B: 255},
+		}
+	default:
+		u.theme.Palette = material.Palette{
+			Bg:         color.NRGBA{A: 255, R: 248, G: 250, B: 252},
+			Fg:         color.NRGBA{A: 255, R: 28, G: 33, B: 40},
+			ContrastBg: color.NRGBA{A: 255, R: 56, G: 104, B: 188},
+			ContrastFg: color.NRGBA{A: 255, R: 255, G: 255, B: 255},
+		}
+	}
+}
+
+func (u *UI) effectiveThemeMode() string {
+	mode := strings.ToLower(strings.TrimSpace(u.cfg.ThemeMode))
+	switch mode {
+	case "dark", "light":
+		return mode
+	default:
+		return "light"
+	}
+}
+
+func (u *UI) mutedTextColor() color.NRGBA {
+	if u.effectiveThemeMode() == "dark" {
+		return color.NRGBA{A: 255, R: 165, G: 173, B: 182}
+	}
+	return color.NRGBA{A: 255, R: 97, G: 106, B: 117}
+}
+
+func (u *UI) subtleBorderColor() color.NRGBA {
+	if u.effectiveThemeMode() == "dark" {
+		return color.NRGBA{A: 255, R: 66, G: 72, B: 80}
+	}
+	return color.NRGBA{A: 255, R: 210, G: 218, B: 228}
+}
+
+func (u *UI) riskMeaningText() string {
+	switch u.overallRisk {
+	case domain.RiskLow:
+		return u.tr("summary.low", "Conditions are stable.")
+	case domain.RiskMedium:
+		return u.tr("summary.medium", "Noticeable change detected.")
+	case domain.RiskHigh:
+		return u.tr("summary.high", "Strong change detected.")
+	case domain.RiskCritical:
+		return u.tr("summary.critical", "Rapid change detected.")
+	default:
+		return u.tr("summary.low", "Conditions are stable.")
+	}
+}
+
+func (u *UI) pressureBandLabel() string {
+	switch u.pressureRisk {
+	case domain.RiskCritical:
+		return u.tr("pressureBand.extreme", "Extreme")
+	case domain.RiskHigh:
+		return u.tr("pressureBand.veryHigh", "Very high")
+	case domain.RiskMedium:
+		return u.tr("pressureBand.high", "High")
+	default:
+		return u.tr("pressureBand.normal", "Normal")
+	}
+}
+
+func (u *UI) kBandLabel() string {
+	switch u.kIndexRisk {
+	case domain.RiskCritical:
+		return u.tr("kBand.storm", "Storm")
+	case domain.RiskHigh:
+		return u.tr("kBand.active", "Active")
+	case domain.RiskMedium:
+		return u.tr("kBand.unsettled", "Unsettled")
+	default:
+		return u.tr("kBand.quiet", "Quiet")
+	}
+}
+
+func (u *UI) pressureWindowLabel() string {
+	return u.tr("common.window_24h", "24h")
+}
+
+func (u *UI) valueWithUnit(value float64, unitName string) string {
+	return fmt.Sprintf("%.1f\u00A0%s", value, unitName)
+}
+
+func (u *UI) nextCheckDisplay() string {
+	if u.nextScheduledCheck.IsZero() {
+		return u.tr("details.none", "None")
+	}
+	return u.formatTime(u.nextScheduledCheck)
+}
+
+func (u *UI) nextCheckDisplayShort() string {
+	if u.nextScheduledCheck.IsZero() {
+		return "-"
+	}
+	return u.formatShortTime(u.nextScheduledCheck)
+}
+
+func (u *UI) formatShortTime(ts time.Time) string {
+	if ts.IsZero() {
+		return "-"
+	}
+	if u.cfg.Units.TimeFormat == "12h" {
+		return ts.Local().Format("03:04 PM")
+	}
+	return ts.Local().Format("15:04")
+}
+
+func (u *UI) primaryDriverText() string {
+	if u.kIndexRisk > u.pressureRisk {
+		return u.tr("details.driver_k", "Geomagnetic activity")
+	}
+	return u.tr("details.driver_pressure", "Pressure change")
+}
+
+func (u *UI) outOfRangeDetailsText() string {
+	parts := make([]string, 0, 2)
+	primaryPressure, _ := domain.ConvertPressureDelta(u.metrics.PressureDeltaHPa, u.cfg.Units.PressureUnit)
+	if u.pressureRisk != domain.RiskLow {
+		thresholdPrimary, _ := domain.ConvertPressureDelta(thresholdLabel(u.pressureRisk, u.cfg.Pressure), u.cfg.Units.PressureUnit)
+		parts = append(parts, u.trf(
+			"details.out_pressure",
+			"Delta Pressure %s (threshold %s)",
+			u.valueWithUnit(primaryPressure, u.cfg.Units.PressureUnit),
+			u.valueWithUnit(thresholdPrimary, u.cfg.Units.PressureUnit),
+		))
+	}
+	if u.kIndexRisk != domain.RiskLow {
+		parts = append(parts, u.trf(
+			"details.out_k",
+			"K-index %d (threshold %.1f)",
+			int(math.Round(u.metrics.KIndex)),
+			thresholdLabelK(u.kIndexRisk, u.cfg.KIndex),
+		))
+	}
+	if len(parts) == 0 {
+		return u.tr("details.none", "None")
+	}
+	return strings.Join(parts, " | ")
+}
+
+func (u *UI) currentCityName() string {
+	if u.selectedCity < 0 || u.selectedCity >= len(u.cities) {
+		return u.tr("settings.custom_city", "custom")
+	}
+	return u.cities[u.selectedCity].Name
+}
+
+func blendColor(a, b color.NRGBA, t float32) color.NRGBA {
+	if t < 0 {
+		t = 0
+	}
+	if t > 1 {
+		t = 1
+	}
+	lerp := func(from, to uint8) uint8 {
+		return uint8(float32(from) + (float32(to)-float32(from))*t)
+	}
+	return color.NRGBA{
+		R: lerp(a.R, b.R),
+		G: lerp(a.G, b.G),
+		B: lerp(a.B, b.B),
+		A: lerp(a.A, b.A),
+	}
 }
 
 func (u *UI) parseFloatEditor(editor *widget.Editor, label string) (float64, error) {
@@ -1960,15 +2489,15 @@ func (u *UI) languageDisplayName(code string) string {
 func (u *UI) riskLabel(level domain.RiskLevel) string {
 	switch level {
 	case domain.RiskLow:
-		return u.tr("risk.low", "LOW")
+		return u.tr("risk.low", "Low")
 	case domain.RiskMedium:
-		return u.tr("risk.medium", "MEDIUM")
+		return u.tr("risk.medium", "Medium")
 	case domain.RiskHigh:
-		return u.tr("risk.high", "HIGH")
+		return u.tr("risk.high", "High")
 	case domain.RiskCritical:
-		return u.tr("risk.critical", "CRITICAL")
+		return u.tr("risk.critical", "Critical")
 	default:
-		return u.tr("risk.unknown", "UNKNOWN")
+		return u.tr("risk.unknown", "Unknown")
 	}
 }
 
