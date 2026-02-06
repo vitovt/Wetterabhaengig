@@ -2,9 +2,11 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +25,7 @@ import (
 	"github.com/vitovt/wetterabhaengig/internal/location"
 	"github.com/vitovt/wetterabhaengig/internal/notify"
 	"github.com/vitovt/wetterabhaengig/internal/service"
+	"github.com/vitovt/wetterabhaengig/internal/storage"
 )
 
 type Screen int
@@ -39,6 +42,7 @@ type UI struct {
 	cfg   domain.AppConfig
 	check *service.Checker
 	ntf   *notify.Notifier
+	store *storage.Store
 
 	screen Screen
 
@@ -107,6 +111,12 @@ func New() *UI {
 		statusMessage:    "Ready. Press Check now to load live data.",
 		autoCheckPending: true,
 	}
+
+	if storePath, err := storage.DefaultPath("wetterabhaengig"); err == nil {
+		u.store = storage.New(storePath)
+	}
+	u.loadState()
+
 	u.latEditor.SingleLine = true
 	u.lonEditor.SingleLine = true
 	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
@@ -158,6 +168,7 @@ func (u *UI) handleActions(gtx layout.Context) {
 			u.setStatus(err.Error(), true)
 		} else {
 			u.setStatus(fmt.Sprintf("Location updated: %.4f, %.4f", u.locationLat, u.locationLon), false)
+			u.saveState()
 		}
 	}
 	for u.toggleNotifBtn.Clicked(gtx) {
@@ -167,6 +178,7 @@ func (u *UI) handleActions(gtx layout.Context) {
 		} else {
 			u.setStatus("Notifications disabled.", false)
 		}
+		u.saveState()
 	}
 	for u.settingsTestBtn.Clicked(gtx) {
 		u.triggerTestNotification()
@@ -207,6 +219,8 @@ func (u *UI) runCheckNow() {
 	u.lastCheck = result.CheckedAt
 	u.hasChecked = true
 	u.history = append(u.history, result)
+	u.pruneHistory()
+	u.saveState()
 
 	if err != nil {
 		u.setStatus(
@@ -677,6 +691,7 @@ func (u *UI) selectCity(index int) {
 		fmt.Sprintf("City selected: %s (%.4f, %.4f)", u.cities[index].Name, u.locationLat, u.locationLon),
 		false,
 	)
+	u.saveState()
 }
 
 func (u *UI) syncLocationFromEditors() error {
@@ -712,6 +727,75 @@ func (u *UI) currentCityName() string {
 func (u *UI) setStatus(message string, isError bool) {
 	u.statusMessage = message
 	u.statusMessageError = isError
+}
+
+func (u *UI) pruneHistory() {
+	if u.cfg.Retention.DefaultDays <= 0 {
+		return
+	}
+
+	cutoff := time.Now().Add(-time.Duration(u.cfg.Retention.DefaultDays) * 24 * time.Hour)
+	filtered := make([]service.Result, 0, len(u.history))
+	for i := range u.history {
+		if u.history[i].CheckedAt.After(cutoff) {
+			filtered = append(filtered, u.history[i])
+		}
+	}
+	u.history = filtered
+}
+
+func (u *UI) loadState() {
+	if u.store == nil {
+		return
+	}
+	state, err := u.store.Load()
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			u.setStatus(fmt.Sprintf("State load error: %v", err), true)
+		}
+		return
+	}
+
+	u.cfg = state.Config
+	u.locationLat = state.LocationLat
+	u.locationLon = state.LocationLon
+	u.selectedCity = state.SelectedCity
+	if u.selectedCity < 0 || u.selectedCity >= len(u.cities) {
+		u.selectedCity = 0
+	}
+	if u.locationLat == 0 && u.locationLon == 0 {
+		u.locationLat = u.cities[u.selectedCity].Lat
+		u.locationLon = u.cities[u.selectedCity].Lon
+	}
+	u.metrics = state.Metrics
+	u.history = state.History
+	u.hasChecked = state.HasChecked
+	if state.LastCheckUTC > 0 {
+		u.lastCheck = time.Unix(state.LastCheckUTC, 0).UTC()
+	}
+	u.recomputeRisk()
+}
+
+func (u *UI) saveState() {
+	if u.store == nil {
+		return
+	}
+
+	lastCheckUTC := int64(0)
+	if !u.lastCheck.IsZero() {
+		lastCheckUTC = u.lastCheck.Unix()
+	}
+
+	_ = u.store.Save(storage.State{
+		Config:       u.cfg,
+		LocationLat:  u.locationLat,
+		LocationLon:  u.locationLon,
+		SelectedCity: u.selectedCity,
+		History:      u.history,
+		Metrics:      u.metrics,
+		LastCheckUTC: lastCheckUTC,
+		HasChecked:   u.hasChecked,
+	})
 }
 
 func defaultLocationIndex(selected location.City, cities []location.City) int {

@@ -13,6 +13,7 @@ The app provides a quick traffic-light risk signal for a selected location and s
 - Live check flow using Open-Meteo and NOAA endpoints.
 - Default risk rules for pressure delta and planetary K-index.
 - Coordinate editing plus editable EU city list selection.
+- Persistent local app state for settings, location, latest metrics, and history.
 - Test-notification actions on Settings and Test screens.
 - Auto-generated placeholder icons, including Android `appicon.png`.
 
