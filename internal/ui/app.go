@@ -82,6 +82,7 @@ type UI struct {
 	cityButtons      []widget.Clickable
 	cityList         layout.List
 	cityToggleBtn    widget.Clickable
+	citySearchEditor widget.Editor
 	cityDropdownOpen bool
 	selectedCity     int
 	locationLat      float64
@@ -149,6 +150,7 @@ func New() *UI {
 
 	u.latEditor.SingleLine = true
 	u.lonEditor.SingleLine = true
+	u.citySearchEditor.SingleLine = true
 	u.latEditor.SetText(fmt.Sprintf("%.4f", u.locationLat))
 	u.lonEditor.SetText(fmt.Sprintf("%.4f", u.locationLon))
 	if u.setScheduleEditor.Text() == "" {
@@ -991,6 +993,8 @@ func (u *UI) currentNotificationText() string {
 }
 
 func (u *UI) layoutCityDropdown(gtx layout.Context) layout.Dimensions {
+	filtered := u.filteredCityIndices()
+
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			label := fmt.Sprintf("City: %s", u.currentCityName())
@@ -1007,18 +1011,31 @@ func (u *UI) layoutCityDropdown(gtx layout.Context) layout.Dimensions {
 				return layout.Dimensions{}
 			}
 			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				maxHeight := gtx.Dp(unit.Dp(190))
-				gtx.Constraints.Max.Y = maxHeight
-				return u.cityList.Layout(gtx, len(u.cityButtons), func(gtx layout.Context, index int) layout.Dimensions {
-					enabledLabel := u.cities[index].Name
-					if index == u.selectedCity {
-						enabledLabel = "• " + enabledLabel
-					}
-					return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						btn := material.Button(u.theme, &u.cityButtons[index], enabledLabel)
-						return btn.Layout(gtx)
-					})
-				})
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						ed := material.Editor(u.theme, &u.citySearchEditor, "Search city (case-insensitive)")
+						return ed.Layout(gtx)
+					}),
+					layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if len(filtered) == 0 {
+							return material.Body2(u.theme, "No matching cities").Layout(gtx)
+						}
+						maxHeight := gtx.Dp(unit.Dp(190))
+						gtx.Constraints.Max.Y = maxHeight
+						return u.cityList.Layout(gtx, len(filtered), func(gtx layout.Context, index int) layout.Dimensions {
+							cityIndex := filtered[index]
+							enabledLabel := u.cities[cityIndex].Name
+							if cityIndex == u.selectedCity {
+								enabledLabel = "• " + enabledLabel
+							}
+							return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								btn := material.Button(u.theme, &u.cityButtons[cityIndex], enabledLabel)
+								return btn.Layout(gtx)
+							})
+						})
+					}),
+				)
 			})
 		}),
 	)
@@ -1029,6 +1046,7 @@ func (u *UI) selectCity(index int) {
 		return
 	}
 	u.cityDropdownOpen = false
+	u.citySearchEditor.SetText("")
 	u.selectedCity = index
 	u.locationLat = u.cities[index].Lat
 	u.locationLon = u.cities[index].Lon
@@ -1069,6 +1087,17 @@ func (u *UI) currentCityName() string {
 		return "custom"
 	}
 	return u.cities[u.selectedCity].Name
+}
+
+func (u *UI) filteredCityIndices() []int {
+	query := strings.ToLower(strings.TrimSpace(u.citySearchEditor.Text()))
+	out := make([]int, 0, len(u.cities))
+	for idx := range u.cities {
+		if query == "" || strings.Contains(strings.ToLower(u.cities[idx].Name), query) {
+			out = append(out, idx)
+		}
+	}
+	return out
 }
 
 func (u *UI) setStatus(message string, isError bool) {
