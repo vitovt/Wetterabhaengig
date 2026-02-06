@@ -195,6 +195,8 @@ func Run(window *app.Window) error {
 			u.handleActions(gtx)
 			u.layout(gtx)
 			event.Frame(gtx.Ops)
+		default:
+			u.handlePlatformEvent(event)
 		}
 	}
 }

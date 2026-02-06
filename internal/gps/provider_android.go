@@ -72,6 +72,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"unsafe"
 
 	"gioui.org/app"
@@ -82,10 +83,19 @@ const (
 	locationPermissionRequest = 4207
 )
 
-type androidProvider struct{}
+type androidProvider struct {
+	mu   sync.RWMutex
+	view uintptr
+}
 
 func newProvider() Provider {
 	return &androidProvider{}
+}
+
+func (a *androidProvider) SetAndroidView(view uintptr) {
+	a.mu.Lock()
+	a.view = view
+	a.mu.Unlock()
 }
 
 func (a *androidProvider) CurrentLocation(ctx context.Context) (float64, float64, error) {
@@ -94,16 +104,24 @@ func (a *androidProvider) CurrentLocation(ctx context.Context) (float64, float64
 	var lon float64
 
 	err := withJNIEnv(func(env *C.JNIEnv, appCtx C.jobject) error {
-		granted, err := checkFineLocationPermission(env, appCtx)
+		activity, err := a.activityFromView(env)
+		if err != nil {
+			return err
+		}
+		defer C.jni_DeleteLocalRef(env, activity)
+
+		granted, err := checkFineLocationPermission(env, activity)
 		if err != nil {
 			return err
 		}
 		if !granted {
-			_ = requestFineLocationPermission(env, appCtx)
+			if err := requestFineLocationPermission(env, activity); err != nil {
+				return fmt.Errorf("cannot request location permission dialog: %w", err)
+			}
 			return errors.New("location permission is not granted yet; allow it and press the GPS button again")
 		}
 
-		manager, err := getLocationManager(env, appCtx)
+		manager, err := getLocationManager(env, activity)
 		if err != nil {
 			return err
 		}
@@ -121,6 +139,52 @@ func (a *androidProvider) CurrentLocation(ctx context.Context) (float64, float64
 		return 0, 0, err
 	}
 	return lat, lon, nil
+}
+
+func (a *androidProvider) activityFromView(env *C.JNIEnv) (C.jobject, error) {
+	a.mu.RLock()
+	viewPtr := a.view
+	a.mu.RUnlock()
+
+	var zeroObj C.jobject
+	if viewPtr == 0 {
+		return zeroObj, errors.New("android view is not ready yet")
+	}
+	viewObj := C.jobject(unsafe.Pointer(viewPtr))
+
+	viewClass := C.jni_GetObjectClass(env, viewObj)
+	var zeroClass C.jclass
+	if viewClass == zeroClass {
+		return zeroObj, errors.New("cannot resolve Android View class")
+	}
+	defer C.jni_DeleteLocalRef(env, C.jobject(viewClass))
+
+	getContextMethod, err := getMethodID(env, viewClass, "getContext", "()Landroid/content/Context;")
+	if err != nil {
+		return zeroObj, err
+	}
+	ctx := C.jni_CallObjectMethodNoArgs(env, viewObj, getContextMethod)
+	if err := jniException(env, "View.getContext"); err != nil {
+		return zeroObj, err
+	}
+	if ctx == zeroObj {
+		return zeroObj, errors.New("android view context is unavailable")
+	}
+
+	activityClassName := C.CString("android/app/Activity")
+	defer C.free(unsafe.Pointer(activityClassName))
+	activityClass := C.jni_FindClass(env, activityClassName)
+	if activityClass == zeroClass {
+		C.jni_DeleteLocalRef(env, ctx)
+		return zeroObj, errors.New("cannot resolve android.app.Activity class")
+	}
+	defer C.jni_DeleteLocalRef(env, C.jobject(activityClass))
+
+	if C.jni_IsInstanceOf(env, ctx, activityClass) != C.JNI_TRUE {
+		C.jni_DeleteLocalRef(env, ctx)
+		return zeroObj, errors.New("android view context is not Activity")
+	}
+	return ctx, nil
 }
 
 func withJNIEnv(fn func(env *C.JNIEnv, appCtx C.jobject) error) error {
@@ -180,7 +244,7 @@ func checkFineLocationPermission(env *C.JNIEnv, appCtx C.jobject) (bool, error) 
 	return int(res) == permissionGranted, nil
 }
 
-func requestFineLocationPermission(env *C.JNIEnv, appCtx C.jobject) error {
+func requestFineLocationPermission(env *C.JNIEnv, activity C.jobject) error {
 	activityClassName := C.CString("android/app/Activity")
 	defer C.free(unsafe.Pointer(activityClassName))
 	activityClass := C.jni_FindClass(env, activityClassName)
@@ -189,11 +253,11 @@ func requestFineLocationPermission(env *C.JNIEnv, appCtx C.jobject) error {
 		return errors.New("cannot resolve android.app.Activity class")
 	}
 	defer C.jni_DeleteLocalRef(env, C.jobject(activityClass))
-	if C.jni_IsInstanceOf(env, appCtx, activityClass) != C.JNI_TRUE {
-		return errors.New("app context is not an Activity; cannot show permission dialog")
+	if C.jni_IsInstanceOf(env, activity, activityClass) != C.JNI_TRUE {
+		return errors.New("request target is not an Activity; cannot show permission dialog")
 	}
 
-	ctxClass := C.jni_GetObjectClass(env, appCtx)
+	ctxClass := C.jni_GetObjectClass(env, activity)
 	if ctxClass == zeroClass {
 		return errors.New("cannot get context class for permission request")
 	}
@@ -231,7 +295,7 @@ func requestFineLocationPermission(env *C.JNIEnv, appCtx C.jobject) error {
 		return err
 	}
 
-	C.jni_CallVoidMethodPermReq(env, appCtx, requestMethod, perms, C.jint(locationPermissionRequest))
+	C.jni_CallVoidMethodPermReq(env, activity, requestMethod, perms, C.jint(locationPermissionRequest))
 	return jniException(env, "requestPermissions")
 }
 
