@@ -45,7 +45,7 @@ type UI struct {
 	cfg   domain.AppConfig
 	check *service.Checker
 	gps   gps.Provider
-	ntf   *notify.Notifier
+	ntf   notify.Notifier
 	store *storage.Store
 	i18n  *i18n.Bundle
 
