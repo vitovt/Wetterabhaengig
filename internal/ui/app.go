@@ -49,10 +49,14 @@ type UI struct {
 
 	screen Screen
 
-	navHome     widget.Clickable
-	navHistory  widget.Clickable
-	navSettings widget.Clickable
-	navTest     widget.Clickable
+	navHome      widget.Clickable
+	navHistory   widget.Clickable
+	navSettings  widget.Clickable
+	navTest      widget.Clickable
+	menuOpenBtn  widget.Clickable
+	menuCloseBtn widget.Clickable
+	menuScrimBtn widget.Clickable
+	menuOpen     bool
 
 	checkNowBtn      widget.Clickable
 	settingsTestBtn  widget.Clickable
@@ -192,6 +196,8 @@ func Run(window *app.Window) error {
 }
 
 func (u *UI) handleActions(gtx layout.Context) {
+	compact := u.isCompactLayout(gtx)
+
 	if u.autoCheckPending {
 		u.autoCheckPending = false
 		u.runCheck(false, "startup")
@@ -202,18 +208,42 @@ func (u *UI) handleActions(gtx layout.Context) {
 
 	for u.navHome.Clicked(gtx) {
 		u.screen = ScreenHome
+		if compact {
+			u.menuOpen = false
+		}
 	}
 	for u.navHistory.Clicked(gtx) {
 		u.screen = ScreenHistory
+		if compact {
+			u.menuOpen = false
+		}
 	}
 	for u.navSettings.Clicked(gtx) {
 		u.screen = ScreenSettings
+		if compact {
+			u.menuOpen = false
+		}
 	}
 	for u.navTest.Clicked(gtx) {
 		u.screen = ScreenTest
+		if compact {
+			u.menuOpen = false
+		}
+	}
+	for u.menuOpenBtn.Clicked(gtx) {
+		u.menuOpen = true
+	}
+	for u.menuCloseBtn.Clicked(gtx) {
+		u.menuOpen = false
+	}
+	for u.menuScrimBtn.Clicked(gtx) {
+		u.menuOpen = false
 	}
 	for u.checkNowBtn.Clicked(gtx) {
 		u.runCheckNow()
+		if compact {
+			u.menuOpen = false
+		}
 	}
 	for u.applyCoordsBtn.Clicked(gtx) {
 		if err := u.syncLocationFromEditors(); err != nil {
@@ -362,17 +392,27 @@ func (u *UI) recomputeRisk() {
 }
 
 func (u *UI) layout(gtx layout.Context) layout.Dimensions {
-	compact := gtx.Constraints.Max.X < gtx.Dp(unit.Dp(760)) || gtx.Constraints.Max.Y > gtx.Constraints.Max.X
+	compact := u.isCompactLayout(gtx)
 
 	inset := layout.UniformInset(unit.Dp(12))
 	return inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		if compact {
-			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				layout.Rigid(u.layoutHeader),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-				layout.Rigid(u.layoutTopNavCompact),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
-				layout.Flexed(1, u.layoutCurrentScreen),
+			return layout.Stack{}.Layout(gtx,
+				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(u.layoutCompactTopBar),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+						layout.Rigid(u.layoutHeader),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+						layout.Flexed(1, u.layoutCurrentScreen),
+					)
+				}),
+				layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+					if !u.menuOpen {
+						return layout.Dimensions{}
+					}
+					return u.layoutMenuOverlay(gtx)
+				}),
 			)
 		}
 
@@ -393,6 +433,77 @@ func (u *UI) layout(gtx layout.Context) layout.Dimensions {
 			}),
 		)
 	})
+}
+
+func (u *UI) isCompactLayout(gtx layout.Context) bool {
+	return gtx.Constraints.Max.X < gtx.Dp(unit.Dp(760)) || gtx.Constraints.Max.Y > gtx.Constraints.Max.X
+}
+
+func (u *UI) layoutCompactTopBar(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			btn := material.Button(u.theme, &u.menuOpenBtn, "Menu")
+			return btn.Layout(gtx)
+		}),
+		layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			label := material.Body1(u.theme, fmt.Sprintf("Screen: %s", u.screenName()))
+			label.Color = color.NRGBA{A: 255, R: 90, G: 90, B: 90}
+			return label.Layout(gtx)
+		}),
+	)
+}
+
+func (u *UI) layoutMenuOverlay(gtx layout.Context) layout.Dimensions {
+	return layout.Stack{}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return u.menuScrimBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				paint.FillShape(
+					gtx.Ops,
+					color.NRGBA{A: 130, R: 15, G: 18, B: 22},
+					clip.Rect(image.Rectangle{Max: gtx.Constraints.Max}).Op(),
+				)
+				return layout.Dimensions{Size: gtx.Constraints.Max}
+			})
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			drawerWidth := gtx.Dp(unit.Dp(280))
+			if drawerWidth > gtx.Constraints.Max.X {
+				drawerWidth = gtx.Constraints.Max.X
+			}
+			gtx.Constraints.Min.X = drawerWidth
+			gtx.Constraints.Max.X = drawerWidth
+
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					panelRect := image.Rectangle{Max: gtx.Constraints.Max}
+					paint.FillShape(
+						gtx.Ops,
+						color.NRGBA{A: 255, R: 246, G: 249, B: 252},
+						clip.Rect(panelRect).Op(),
+					)
+					return layout.Inset{Top: unit.Dp(10), Left: unit.Dp(10), Right: unit.Dp(10), Bottom: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+										title := material.H6(u.theme, "Navigation")
+										return title.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										btn := material.Button(u.theme, &u.menuCloseBtn, "Close")
+										return btn.Layout(gtx)
+									}),
+								)
+							}),
+							layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+							layout.Rigid(u.layoutSidebar),
+						)
+					})
+				}),
+			)
+		}),
+	)
 }
 
 func (u *UI) layoutHeader(gtx layout.Context) layout.Dimensions {
@@ -443,31 +554,6 @@ func (u *UI) layoutSidebar(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-func (u *UI) layoutTopNavCompact(gtx layout.Context) layout.Dimensions {
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(1, u.layoutNavRow(&u.navHome, ScreenHome, u.tr("nav.home", "Home"))),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, u.layoutNavRow(&u.navHistory, ScreenHistory, u.tr("nav.history", "History"))),
-			)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
-				layout.Flexed(1, u.layoutNavRow(&u.navSettings, ScreenSettings, u.tr("nav.settings", "Settings"))),
-				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-				layout.Flexed(1, u.layoutNavRow(&u.navTest, ScreenTest, u.tr("nav.test", "Test"))),
-			)
-		}),
-		layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			btn := material.Button(u.theme, &u.checkNowBtn, u.tr("buttons.check_now", "Check now"))
-			return btn.Layout(gtx)
-		}),
-	)
-}
-
 func (u *UI) layoutNavRow(clickable *widget.Clickable, screen Screen, label string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		if u.screen == screen {
@@ -475,6 +561,21 @@ func (u *UI) layoutNavRow(clickable *widget.Clickable, screen Screen, label stri
 		}
 		btn := material.Button(u.theme, clickable, label)
 		return btn.Layout(gtx)
+	}
+}
+
+func (u *UI) screenName() string {
+	switch u.screen {
+	case ScreenHome:
+		return u.tr("nav.home", "Home")
+	case ScreenHistory:
+		return u.tr("nav.history", "History")
+	case ScreenSettings:
+		return u.tr("nav.settings", "Settings")
+	case ScreenTest:
+		return u.tr("nav.test", "Test")
+	default:
+		return "Unknown"
 	}
 }
 
