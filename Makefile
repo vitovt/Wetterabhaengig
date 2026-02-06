@@ -14,7 +14,7 @@ help:
 	@echo "  make deps     - Sync Go dependencies."
 	@echo "  make linux    - Build Linux binary."
 	@echo "  make windows  - Build Windows binary."
-	@echo "  make mac      - Build macOS binary."
+	@echo "  make mac      - Build macOS binary (run on macOS host)."
 	@echo "  make android  - Build Android package with gogio."
 	@echo "  make clean    - Remove build artifacts."
 
@@ -28,13 +28,19 @@ deps:
 	go mod tidy
 
 linux: prepare
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $(BUILD_DIR)/linux/$(APP_NAME) $(MAIN_PKG)
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o $(BUILD_DIR)/linux/$(APP_NAME) $(MAIN_PKG)
 
 windows: prepare
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o $(BUILD_DIR)/windows/$(APP_NAME).exe $(MAIN_PKG)
 
 mac: prepare
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -o $(BUILD_DIR)/mac/$(APP_NAME) $(MAIN_PKG)
+	@if [ "$$(go env GOHOSTOS)" = "darwin" ]; then \
+		GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -o $(BUILD_DIR)/mac/$(APP_NAME) $(MAIN_PKG); \
+	else \
+		echo "mac target requires a macOS host (or configured osxcross toolchain)."; \
+		echo "Run this target on macOS for reliable Gio desktop builds."; \
+		exit 1; \
+	fi
 
 android: prepare
 	@test -f cmd/wetterabhaengig/appicon.png || (echo "Missing icon: cmd/wetterabhaengig/appicon.png" && exit 1)

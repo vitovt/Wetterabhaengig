@@ -26,13 +26,14 @@ The project uses `Makefile` targets:
 - `make deps`
 - `make linux`
 - `make windows`
-- `make mac`
+- `make mac` (run on macOS host)
 - `make android`
 - `make clean`
 
 ## Android Icon
 
 Android builds expect `cmd/wetterabhaengig/appicon.png`.
+Android build target also requires `gogio` installed in `PATH`.
 
 ## Notes
 
