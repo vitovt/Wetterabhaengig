@@ -9,6 +9,11 @@ The app is designed for quick risk awareness at a selected location:
 - source-specific risk from pressure delta and planetary K-index
 - clear numeric details so the status is explainable
 
+## Screenshots
+
+<img width="360" alt="Wetterabhaengig Screenshot 01" src="Screenshots/Screenshot01.png">
+<img width="360" alt="Wetterabhaengig Screenshot 02" src="Screenshots/Screenshot02.png">
+
 ## Current Functionality
 
 - Platforms: Linux, Android, Windows, macOS.
@@ -106,3 +111,11 @@ Build outputs:
 2. Add release-grade signing/versioning flow (debug keystore is fine for dev, not for production releases).
 3. Add CI (`go build`, `make linux`, optional Android build/lint checks).
 4. Improve UX for API failures/offline mode (clear badges/states on Home screen).
+
+## More Screenshots
+
+<img width="280" alt="Wetterabhaengig Screenshot 03" src="Screenshots/Screenshot03.png">
+<img width="280" alt="Wetterabhaengig Screenshot 04" src="Screenshots/Screenshot04.png">
+<img width="280" alt="Wetterabhaengig Screenshot 05" src="Screenshots/Screenshot05.png">
+<img width="280" alt="Wetterabhaengig Screenshot 06" src="Screenshots/Screenshot06.png">
+<img width="280" alt="Wetterabhaengig Screenshot 07" src="Screenshots/Screenshot07.png">
