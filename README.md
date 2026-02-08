@@ -44,6 +44,18 @@ The app is designed for quick risk awareness at a selected location:
   - settings, location, metrics, history
   - stored in user config dir (`.../wetterabhaengig/state.json`)
 
+## Status Matrix
+
+| Capability | Linux | Android | Windows | macOS |
+| --- | --- | --- | --- | --- |
+| Core UI (Home/History/Settings/Location/Test) | Implemented | Implemented | Implemented | Implemented |
+| Manual `Check now` + in-app scheduling | Implemented | Implemented | Implemented | Implemented |
+| Background checks while app window is closed | Not supported | Implemented (optional, settings-controlled) | Not supported | Not supported |
+| GPS location button | Not supported | Implemented (runtime permission) | Not supported | Not supported |
+| Local notifications | Implemented (`notify-send`) | Implemented (native Android notifications) | Implemented (PowerShell toast/balloon fallback) | Implemented (`osascript`) |
+| Localization (System/EN/DE/UK) | Implemented | Implemented | Implemented | Implemented |
+| Android APK build flow | N/A | Implemented | N/A | N/A |
+
 ## Build Requirements
 
 - Go `1.22+`
@@ -87,3 +99,10 @@ Build outputs:
 - Background checks after closing the app are currently Android-only.
 - Android background execution still depends on device battery/background policies (OEM restrictions may delay jobs).
 - Desktop notifications depend on available system tooling (`notify-send`, `osascript`, PowerShell), but all desktop backends are implemented.
+
+## TODO
+
+1. Add tests (config validation, risk aggregation, i18n key coverage, API parsing/fallback behavior).
+2. Add release-grade signing/versioning flow (debug keystore is fine for dev, not for production releases).
+3. Add CI (`go build`, `make linux`, optional Android build/lint checks).
+4. Improve UX for API failures/offline mode (clear badges/states on Home screen).
