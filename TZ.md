@@ -65,10 +65,15 @@ This file captures only the requirements that have been agreed so far.
 - Scheduled checks with configurable period:
   - Default: 60 minutes.
   - Minimum: 15 minutes (lower is not allowed).
+- Optional Android background checks when app window is closed:
+  - Implemented with Android `ForegroundService` + `AlarmManager`.
+  - Controlled by settings switch.
+  - Disabled by default.
 - Local notifications when the traffic light state changes (any direction).
 - Notifications can be enabled/disabled (default: enabled).
-- Settings page must include a `Test notification` button.
-- Test page must include a `Test notification` action.
+- Notification backends are implemented for Android, Linux, macOS, and Windows.
+- Settings page does not include `Test notification` (moved out for cleaner settings UX).
+- Test page includes a `Test notification` action.
 - `Test notification` must immediately show a local notification using current notification data.
 
 ## History & Storage

@@ -35,6 +35,7 @@ The app is designed for quick risk awareness at a selected location:
   - Linux: `notify-send`
   - macOS: `osascript`
   - Windows: native toast via PowerShell/WinRT with balloon fallback
+  - Test action: available on the `Test` screen and sends an immediate local notification with current app data
 - Localization:
   - `System`, `English`, `Deutsch`, `Ukrainian`
   - language selector with dropdown search
@@ -85,4 +86,4 @@ Build outputs:
 
 - Background checks after closing the app are currently Android-only.
 - Android background execution still depends on device battery/background policies (OEM restrictions may delay jobs).
-- Desktop notifications depend on available system tooling (`notify-send`, `osascript`, PowerShell).
+- Desktop notifications depend on available system tooling (`notify-send`, `osascript`, PowerShell), but all desktop backends are implemented.
