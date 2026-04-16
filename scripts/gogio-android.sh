@@ -56,13 +56,7 @@ if [ -z "$jar_bin" ]; then
 fi
 
 log_file="$(mktemp /tmp/gogio-build-XXXX.log)"
-export GOCACHE="${GOCACHE:-/tmp/gocache-wetterabhaengig}"
-mkdir -p "$GOCACHE"
-if ! "$gogio_bin" -x -work -target android -minsdk "$min_sdk" -targetsdk "$target_sdk" -appid "$app_id" "$go_pkg" >"$log_file" 2>&1; then
-	echo "gogio build failed. Last log lines:" >&2
-	tail -n 120 "$log_file" >&2 || true
-	exit 1
-fi
+"$gogio_bin" -x -work -target android -minsdk "$min_sdk" -targetsdk "$target_sdk" -appid "$app_id" "$go_pkg" >"$log_file" 2>&1
 
 workdir="$(sed -n 's/^WORKDIR=//p' "$log_file" | tail -n1)"
 if [ -z "$workdir" ] || [ ! -d "$workdir" ]; then
