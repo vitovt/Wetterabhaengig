@@ -27,9 +27,7 @@ The app is designed for quick risk awareness at a selected location:
   - on startup
   - manual `Check now`
   - scheduled checks while app is running
-  - optional Android-only background mode (`disabled` by default):
-    - app schedules Android background checks via `ForegroundService` + `AlarmManager`
-    - enabled only when `Run scheduled checks while app is closed` is ON in Settings
+  - optional Android-only mode to continue scheduled checks after closing app window (`disabled` by default)
 - Location:
   - manual coordinates
   - city dropdown with search and scroll
@@ -54,7 +52,7 @@ The app is designed for quick risk awareness at a selected location:
 | --- | --- | --- | --- | --- |
 | Core UI (Home/History/Settings/Location/Test) | Implemented | Implemented | Implemented | Implemented |
 | Manual `Check now` + in-app scheduling | Implemented | Implemented | Implemented | Implemented |
-| Background checks while app window is closed | Not supported | Implemented (optional, settings-controlled) | Not supported | Not supported |
+| Background checks while app window is closed | Not supported | Experimental (best-effort, settings-controlled) | Not supported | Not supported |
 | GPS location button | Not supported | Implemented (runtime permission) | Not supported | Not supported |
 | Local notifications | Implemented (`notify-send`) | Implemented (native Android notifications) | Implemented (PowerShell toast/balloon fallback) | Implemented (`osascript`) |
 | Localization (System/EN/DE/UK) | Implemented | Implemented | Implemented | Implemented |
@@ -101,8 +99,9 @@ Build outputs:
 ## Limitations
 
 - Background checks after closing the app are currently Android-only.
+- Android closed-app scheduling is best-effort and not yet implemented as a dedicated OS job scheduler service.
 - Android background execution still depends on device battery/background policies (OEM restrictions may delay jobs).
-- Desktop notifications depend on available system tooling (`notify-send`, `osascript`, PowerShell), but all desktop backends are implemented.
+- Desktop notifications depend on available system tooling (`notify-send`, `osascript`, PowerShell), while the Windows backend is implemented through PowerShell.
 
 ## TODO
 

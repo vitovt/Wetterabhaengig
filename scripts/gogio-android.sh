@@ -35,25 +35,14 @@ fi
 aapt2_bin="$build_tools_dir/aapt2"
 zipalign_bin="$build_tools_dir/zipalign"
 apksigner_bin="$build_tools_dir/apksigner"
-d8_bin="$build_tools_dir/d8"
-javac_bin="$(command -v javac || true)"
-jar_bin="$(command -v jar || true)"
 android_jar="$platform_dir/android.jar"
 
-for tool in "$aapt2_bin" "$zipalign_bin" "$apksigner_bin" "$d8_bin"; do
+for tool in "$aapt2_bin" "$zipalign_bin" "$apksigner_bin"; do
 	if [ ! -x "$tool" ]; then
 		echo "required Android tool is missing: $tool" >&2
 		exit 1
 	fi
 done
-if [ -z "$javac_bin" ]; then
-	echo "required Java compiler is missing: javac" >&2
-	exit 1
-fi
-if [ -z "$jar_bin" ]; then
-	echo "required Java archiver is missing: jar" >&2
-	exit 1
-fi
 
 log_file="$(mktemp /tmp/gogio-build-XXXX.log)"
 "$gogio_bin" -x -work -target android -minsdk "$min_sdk" -targetsdk "$target_sdk" -appid "$app_id" "$go_pkg" >"$log_file" 2>&1
@@ -100,59 +89,22 @@ cat >"$notif_icon_file" <<'EOF'
 </vector>
 EOF
 
-ensure_manifest_permission() {
-	local permission="$1"
-	if grep -q "$permission" "$manifest"; then
-		return
-	fi
+if ! grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"; then
 	tmp_manifest="$(mktemp /tmp/AndroidManifest-XXXX.xml)"
-	awk -v permission="$permission" '
+	awk '
 		/<application / {
-			print "\t<uses-permission android:name=\"" permission "\"/>"
+			print "\t<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\"/>"
 			added=1
 		}
 		{ print }
 		END {
 			if (!added) {
-				print "\t<uses-permission android:name=\"" permission "\"/>"
+				print "\t<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\"/>"
 			}
 		}
 	' "$manifest" >"$tmp_manifest"
 	mv "$tmp_manifest" "$manifest"
-}
-
-ensure_manifest_component() {
-	local marker="$1"
-	local component="$2"
-	if grep -q "$marker" "$manifest"; then
-		return
-	fi
-	tmp_manifest="$(mktemp /tmp/AndroidManifest-XXXX.xml)"
-	awk -v component="$component" '
-		/<\/application>/ && !added {
-			print "\t\t" component
-			added=1
-		}
-		{ print }
-		END {
-			if (!added) {
-				print "\t\t" component
-			}
-		}
-	' "$manifest" >"$tmp_manifest"
-	mv "$tmp_manifest" "$manifest"
-}
-
-ensure_manifest_permission "android.permission.POST_NOTIFICATIONS"
-ensure_manifest_permission "android.permission.FOREGROUND_SERVICE"
-ensure_manifest_permission "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
-
-ensure_manifest_component \
-	"com.vitovt.wetterabhaengig.bg.BackgroundCheckService" \
-	"<service android:name=\"com.vitovt.wetterabhaengig.bg.BackgroundCheckService\" android:exported=\"false\" android:foregroundServiceType=\"dataSync\"/>"
-ensure_manifest_component \
-	"com.vitovt.wetterabhaengig.bg.BackgroundCheckReceiver" \
-	"<receiver android:name=\"com.vitovt.wetterabhaengig.bg.BackgroundCheckReceiver\" android:exported=\"false\"/>"
+fi
 
 "$aapt2_bin" compile -o "$workdir/resources.zip" --dir "$workdir/res"
 "$aapt2_bin" link --manifest "$manifest" -I "$android_jar" -o "$workdir/link.apk" "$workdir/resources.zip"
@@ -169,32 +121,6 @@ for arch_dir in "$workdir"/jni/*; do
 done
 
 cp "$workdir/apk/classes.dex" "$repack_dir/classes.dex"
-
-java_src_dir="$repo_root/androidsrc"
-if [ -d "$java_src_dir" ]; then
-	mapfile -t java_sources < <(find "$java_src_dir" -type f -name '*.java' | sort)
-	if [ "${#java_sources[@]}" -gt 0 ]; then
-		java_classes_dir="$workdir/java-classes"
-		java_dex_dir="$workdir/java-dex"
-		java_jar_file="$workdir/java-classes.jar"
-		rm -rf "$java_classes_dir" "$java_dex_dir"
-		mkdir -p "$java_classes_dir" "$java_dex_dir"
-		"$javac_bin" -source 8 -target 8 -encoding UTF-8 -cp "$android_jar" -d "$java_classes_dir" "${java_sources[@]}"
-		rm -f "$java_jar_file"
-		(
-			cd "$java_classes_dir"
-			"$jar_bin" cf "$java_jar_file" .
-		)
-		"$d8_bin" --min-api "$min_sdk" --output "$java_dex_dir" "$java_jar_file"
-
-		dex_index=2
-		for dex_file in "$java_dex_dir"/classes*.dex; do
-			[ -f "$dex_file" ] || continue
-			cp "$dex_file" "$repack_dir/classes${dex_index}.dex"
-			dex_index=$((dex_index + 1))
-		done
-	fi
-fi
 
 (
 	cd "$repack_dir"
