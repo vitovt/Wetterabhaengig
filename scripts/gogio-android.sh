@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -lt 5 ]; then
-	echo "usage: $0 <gogio-bin> <min-sdk> <target-sdk> <app-id> <go-package>" >&2
+if [ "$#" -lt 6 ]; then
+	echo "usage: $0 <gogio-bin> <min-sdk> <target-sdk> <app-id> <go-package> <output-apk>" >&2
 	exit 2
 fi
 
@@ -11,6 +11,7 @@ min_sdk="$2"
 target_sdk="$3"
 app_id="$4"
 go_pkg="$5"
+output_apk="$6"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 
@@ -45,11 +46,19 @@ for tool in "$aapt2_bin" "$zipalign_bin" "$apksigner_bin"; do
 done
 
 log_file="$(mktemp /tmp/gogio-build-XXXX.log)"
-"$gogio_bin" -x -work -target android -minsdk "$min_sdk" -targetsdk "$target_sdk" -appid "$app_id" "$go_pkg" >"$log_file" 2>&1
+echo "Running gogio Android build..."
+echo "Full gogio log: $log_file"
+if ! "$gogio_bin" -x -work -target android -minsdk "$min_sdk" -targetsdk "$target_sdk" -appid "$app_id" "$go_pkg" >"$log_file" 2>&1; then
+	echo "gogio build failed. Showing the last 60 log lines:" >&2
+	tail -n 60 "$log_file" >&2 || true
+	echo "Full gogio log: $log_file" >&2
+	exit 1
+fi
 
 workdir="$(sed -n 's/^WORKDIR=//p' "$log_file" | tail -n1)"
 if [ -z "$workdir" ] || [ ! -d "$workdir" ]; then
 	echo "cannot determine gogio WORKDIR from log" >&2
+	echo "Full gogio log: $log_file" >&2
 	sed -n '1,200p' "$log_file" >&2
 	exit 1
 fi
@@ -128,18 +137,27 @@ cp "$workdir/apk/classes.dex" "$repack_dir/classes.dex"
 	zip -q0r "$workdir/app.zip" .
 )
 
-output_apk="wetterabhaengig.apk"
 "$zipalign_bin" -f 4 "$workdir/app.zip" "$output_apk"
 
 keystore_path="${WETTER_KEYSTORE_PATH:-$repo_root/.keys/android-debug.keystore}"
 keystore_alias="${WETTER_KEY_ALIAS:-android}"
 keystore_pass="${WETTER_KEY_PASS:-android}"
 
+echo "Android APK signing mode: development/debug keystore"
+echo "Keystore path: $keystore_path"
+echo "Keystore alias: $keystore_alias"
+echo "Reuse WETTER_KEYSTORE_PATH/WETTER_KEY_ALIAS/WETTER_KEY_PASS to keep signing with the same key."
+echo "Point those variables to another keystore if you want a different development key."
+echo "For production releases, set those variables to your production keystore before running the final build."
+
 mkdir -p "$(dirname "$keystore_path")"
 if [ ! -f "$keystore_path" ]; then
-	keytool -genkey -keystore "$keystore_path" -storepass "$keystore_pass" -alias "$keystore_alias" -keyalg RSA -keysize 2048 -validity 10000 -noprompt -dname CN=wetterabhaengig
+	echo "Development keystore not found. Generating a new one at: $keystore_path"
+	keytool -genkey -keystore "$keystore_path" -storepass "$keystore_pass" -alias "$keystore_alias" -keyalg RSA -keysize 2048 -validity 10000 -noprompt -dname "CN=$app_id"
 fi
 
 "$apksigner_bin" sign --ks-pass "pass:$keystore_pass" --ks "$keystore_path" --ks-key-alias "$keystore_alias" "$output_apk"
 
 echo "Patched APK built at: $(pwd)/$output_apk"
+echo "gogio WORKDIR: $workdir"
+echo "gogio log: $log_file"
