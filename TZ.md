@@ -66,8 +66,9 @@ This file captures only the requirements that have been agreed so far.
   - Default: 60 minutes.
   - Minimum: 15 minutes (lower is not allowed).
 - Optional Android background checks when app window is closed:
-  - Implemented with Android `ForegroundService` + `AlarmManager`.
+  - Available only as best-effort mode.
   - Controlled by settings switch.
+  - Dedicated OS-level Android background scheduler is not part of `main`.
   - Disabled by default.
 - Local notifications when the traffic light state changes (any direction).
 - Notifications can be enabled/disabled (default: enabled).
