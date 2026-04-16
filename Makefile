@@ -23,12 +23,14 @@ WINDOWS_CGO_ENABLED ?= 0
 MAC_CGO_ENABLED ?= 1
 
 ARTIFACT_TARGETS ?= linux windows android
+ARCHIVE_DESKTOP_ARTIFACTS ?= 0
 
 PROJECT_TUNE_HINT ?= APP_NAME is derived from the basename of the module path in go.mod; override it only if the shipped binary name should differ.
 LINUX_HOST_DEPS_HINT ?= Add Linux host dependencies here if the project needs GUI or CGO system packages.
 WINDOWS_HOST_DEPS_HINT ?= Add cross-build toolchain notes here if the project cannot use plain GOOS=windows builds.
 ANDROID_HOST_DEPS_HINT ?= This repo uses Gio via scripts/gogio-android.sh; Fyne or other stacks will need a different Android runner and dependency notes.
 PROJECTNAME_REGEX := ^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$$
+ARCHIVE_DESKTOP_ENABLED := $(filter 1 true TRUE yes YES on ON,$(ARCHIVE_DESKTOP_ARTIFACTS))
 
 APP_NAME_DISPLAY := $(if $(APP_NAME),$(APP_NAME),<missing: run make init PROJECTNAME=github.com/acme/myapp>)
 APP_ID_DISPLAY := $(if $(APP_ID),$(APP_ID),<derived after go.mod/module init>)
@@ -65,8 +67,13 @@ MAC_BIN := $(BUILD_DIR)/mac/$(APP_NAME)
 ANDROID_APK := $(BUILD_DIR)/android/$(APP_NAME).apk
 
 ARTIFACT_DIR := $(DIST_DIR)/$(VERSION)
+ifneq ($(ARCHIVE_DESKTOP_ENABLED),)
 LINUX_ARTIFACT := $(ARTIFACT_DIR)/$(APP_NAME)_$(VERSION)_linux_$(LINUX_GOARCH).tar.gz
 WINDOWS_ARTIFACT := $(ARTIFACT_DIR)/$(APP_NAME)_$(VERSION)_windows_$(WINDOWS_GOARCH).zip
+else
+LINUX_ARTIFACT := $(ARTIFACT_DIR)/$(APP_NAME)_$(VERSION)_linux_$(LINUX_GOARCH)
+WINDOWS_ARTIFACT := $(ARTIFACT_DIR)/$(APP_NAME)_$(VERSION)_windows_$(WINDOWS_GOARCH).exe
+endif
 ANDROID_ARTIFACT := $(ARTIFACT_DIR)/$(APP_NAME)_$(VERSION)_android.apk
 CHECKSUM_FILE := $(ARTIFACT_DIR)/SHA256SUMS.txt
 
@@ -99,6 +106,11 @@ help:
 	@echo "  make init PROJECTNAME=github.com/acme/weatherchecker"
 	@echo "  make init PROJECTNAME=gitlab.com/team/weather-tool"
 	@echo "  Allowed PROJECTNAME characters: lowercase letters, digits, '.', '_', '-', and '/'."
+	@echo ""
+	@echo "Artifact packaging:"
+	@echo "  Desktop artifacts are uploaded as raw binaries by default."
+	@echo "  Enable archive packaging with ARCHIVE_DESKTOP_ARTIFACTS=1."
+	@echo "  Example: make snapshot ARCHIVE_DESKTOP_ARTIFACTS=1"
 	@echo ""
 	@echo "Project tuning checklist:"
 	@echo "  1. Check that go.mod has the module path you want; APP_NAME comes from its basename."
@@ -140,6 +152,7 @@ help:
 	@echo "Release behavior:"
 	@echo "  release requires an exact git tag on HEAD, a clean git tree, gh installed, and gh auth ready."
 	@echo "  snapshot works from any commit and produces a -dev/-dirty version when HEAD is not an exact tag."
+	@echo "  Raw Linux/macOS binaries may require 'chmod +x' after download because release assets do not preserve Unix execute bits."
 	@echo "  Artifact coverage is intentionally limited to $(ARTIFACT_TARGETS); extend it per project when needed."
 	@echo ""
 	@echo "Current values:"
@@ -149,6 +162,7 @@ help:
 	@echo "  MAIN_PKG:         $(MAIN_PKG_DISPLAY)"
 	@echo "  VERSION:          $(VERSION)"
 	@echo "  ARTIFACT_TARGETS: $(ARTIFACT_TARGETS)"
+	@echo "  ARCHIVE_DESKTOP_ARTIFACTS: $(ARCHIVE_DESKTOP_ARTIFACTS)"
 	@echo "  BUILD_DIR:        $(BUILD_DIR)"
 	@echo "  DIST_DIR:         $(DIST_DIR)"
 	@echo "  ANDROID_ICON_PATH: $(ANDROID_ICON_PATH_DISPLAY)"
@@ -287,10 +301,16 @@ android: check prepare
 $(LINUX_ARTIFACT): linux
 	@mkdir -p $(ARTIFACT_DIR)
 	@echo "Packaging Linux artifact: $@"
+ifneq ($(ARCHIVE_DESKTOP_ENABLED),)
 	@tar -C $(BUILD_DIR)/linux -czf $@ $(APP_NAME)
+else
+	@cp $(LINUX_BIN) $@
+	@chmod 755 $@
+endif
 
 $(WINDOWS_ARTIFACT): windows
 	@mkdir -p $(ARTIFACT_DIR)
+ifneq ($(ARCHIVE_DESKTOP_ENABLED),)
 	@if ! command -v zip >/dev/null 2>&1; then \
 		echo "zip is required to package Windows artifacts."; \
 		exit 1; \
@@ -298,6 +318,10 @@ $(WINDOWS_ARTIFACT): windows
 	@echo "Packaging Windows artifact: $@"
 	@rm -f $@
 	@zip -jq $@ $(WINDOWS_BIN)
+else
+	@echo "Packaging Windows artifact: $@"
+	@cp $(WINDOWS_BIN) $@
+endif
 
 $(ANDROID_ARTIFACT): android
 	@mkdir -p $(ARTIFACT_DIR)
@@ -329,6 +353,7 @@ release-check:
 		echo "Release requires an exact git tag on HEAD."; \
 		echo "Current derived version is $(VERSION). Use 'make snapshot' for untagged builds."; \
 		echo "Last git tag was: $$last_tag"; \
+		echo "Add '#git tag vXX.XX.XX' or '#git tag XX.XX.XX' and push '#git push --tags'"; \
 		echo "Recent commits (git log --oneline -n 10):"; \
 		git log --oneline -n 10; \
 		exit 1; \
