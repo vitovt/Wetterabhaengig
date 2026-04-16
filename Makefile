@@ -1,14 +1,15 @@
-APP_NAME ?= wetterabhaengig
-APP_ID ?= com.vitovt.$(APP_NAME)
-MAIN_PKG ?= ./cmd/$(APP_NAME)
+MODULE_PATH := $(shell sed -n 's/^module //p' go.mod 2>/dev/null | head -n1)
+APP_NAME ?= $(notdir $(MODULE_PATH))
+APP_ID ?= $(if $(APP_NAME),com.vitovt.$(APP_NAME),)
+MAIN_PKG ?= $(if $(APP_NAME),./cmd/$(APP_NAME),)
 
 BUILD_DIR ?= build
 DIST_DIR ?= dist
 
 GOGIO ?= gogio
 GOGIO_RUNNER ?= $(CURDIR)/scripts/gogio-android.sh
-ANDROID_ICON_PATH ?= cmd/$(APP_NAME)/appicon.png
-ANDROID_NOTIFICATION_ICON_NAME ?= ic_stat_$(APP_NAME)
+ANDROID_ICON_PATH ?= $(if $(APP_NAME),cmd/$(APP_NAME)/appicon.png,)
+ANDROID_NOTIFICATION_ICON_NAME ?= $(if $(APP_NAME),ic_stat_$(APP_NAME),)
 ANDROID_MIN_SDK ?= 30
 ANDROID_TARGET_SDK ?= 34
 ANDROID_HOME_FALLBACK := $(or $(ANDROID_HOME),$(ANDROID_SDK_ROOT),$(HOME)/Android/Sdk)
@@ -23,10 +24,18 @@ MAC_CGO_ENABLED ?= 1
 
 ARTIFACT_TARGETS ?= linux windows android
 
-PROJECT_TUNE_HINT ?= Update APP_NAME first; APP_ID, MAIN_PKG and ANDROID_ICON_PATH already derive from it unless your project layout differs.
+PROJECT_TUNE_HINT ?= APP_NAME is derived from the basename of the module path in go.mod; override it only if the shipped binary name should differ.
 LINUX_HOST_DEPS_HINT ?= Add Linux host dependencies here if the project needs GUI or CGO system packages.
 WINDOWS_HOST_DEPS_HINT ?= Add cross-build toolchain notes here if the project cannot use plain GOOS=windows builds.
 ANDROID_HOST_DEPS_HINT ?= This repo uses Gio via scripts/gogio-android.sh; Fyne or other stacks will need a different Android runner and dependency notes.
+PROJECTNAME_REGEX := ^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$$
+
+APP_NAME_DISPLAY := $(if $(APP_NAME),$(APP_NAME),<missing: run make init PROJECTNAME=github.com/acme/myapp>)
+APP_ID_DISPLAY := $(if $(APP_ID),$(APP_ID),<derived after go.mod/module init>)
+MAIN_PKG_DISPLAY := $(if $(MAIN_PKG),$(MAIN_PKG),<derived after go.mod/module init>)
+ANDROID_ICON_PATH_DISPLAY := $(if $(ANDROID_ICON_PATH),$(ANDROID_ICON_PATH),<derived after go.mod/module init>)
+ANDROID_NOTIFICATION_ICON_NAME_DISPLAY := $(if $(ANDROID_NOTIFICATION_ICON_NAME),$(ANDROID_NOTIFICATION_ICON_NAME),<derived after go.mod/module init>)
+MODULE_PATH_DISPLAY := $(if $(MODULE_PATH),$(MODULE_PATH),<missing>)
 
 EXACT_TAG := $(shell git describe --tags --exact-match 2>/dev/null || true)
 MAIN_PKG_ABS := $(abspath $(MAIN_PKG))
@@ -75,17 +84,24 @@ RELEASE_ASSETS := $(ARTIFACT_FILES) $(CHECKSUM_FILE)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help prepare deps mod-tidy fmt fmt-check test check build linux windows mac android artifacts snapshot release release-check clean
+.PHONY: help init ensure-module prepare deps mod-tidy fmt fmt-check test check build linux windows mac android artifacts snapshot release release-check clean
 
 help:
 	@echo "UNIVERSAL GO BUILD / TEST / PACKAGE / RELEASE ENTRYPOINT"
 	@echo "Drop this Makefile into a Go project, then tune only the small project-specific variables at the top."
-	@echo "Start by updating APP_NAME, then override APP_ID, MAIN_PKG, icon paths, targets, or platform commands only if that project differs."
+	@echo "APP_NAME is derived automatically from the basename of the module path in go.mod."
+	@echo "If go.mod does not exist yet, run make init PROJECTNAME=<module_path> first."
 	@echo "Linux/Windows builds are expected to be common. Android support is optional and depends on the UI stack."
 	@echo "This repo uses Gio + gogio. A Fyne-based Android project will usually replace GOGIO_RUNNER and Android hints."
 	@echo ""
+	@echo "Initialization:"
+	@echo "  make init PROJECTNAME=weatherchecker"
+	@echo "  make init PROJECTNAME=github.com/acme/weatherchecker"
+	@echo "  make init PROJECTNAME=gitlab.com/team/weather-tool"
+	@echo "  Allowed PROJECTNAME characters: lowercase letters, digits, '.', '_', '-', and '/'."
+	@echo ""
 	@echo "Project tuning checklist:"
-	@echo "  1. Set APP_NAME to the shipped binary name."
+	@echo "  1. Check that go.mod has the module path you want; APP_NAME comes from its basename."
 	@echo "  2. Override APP_ID only if the Android application id should not be com.vitovt.<APP_NAME>."
 	@echo "  3. Override MAIN_PKG only if your main package is not ./cmd/<APP_NAME>."
 	@echo "  4. Set ARTIFACT_TARGETS to the platforms this repo actually releases."
@@ -101,6 +117,8 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  make help         - Show this help output (default)."
+	@echo "  make init         - Create go.mod after validating PROJECTNAME."
+	@echo "  make ensure-module - Fail early with a make init hint if go.mod/module is missing."
 	@echo "  make prepare      - Create local build and dist folders."
 	@echo "  make deps         - Download Go modules without mutating go.mod/go.sum."
 	@echo "  make mod-tidy     - Run go mod tidy explicitly."
@@ -125,26 +143,77 @@ help:
 	@echo "  Artifact coverage is intentionally limited to $(ARTIFACT_TARGETS); extend it per project when needed."
 	@echo ""
 	@echo "Current values:"
-	@echo "  APP_NAME:         $(APP_NAME)"
-	@echo "  APP_ID:           $(APP_ID)"
-	@echo "  MAIN_PKG:         $(MAIN_PKG)"
+	@echo "  MODULE_PATH:      $(MODULE_PATH_DISPLAY)"
+	@echo "  APP_NAME:         $(APP_NAME_DISPLAY)"
+	@echo "  APP_ID:           $(APP_ID_DISPLAY)"
+	@echo "  MAIN_PKG:         $(MAIN_PKG_DISPLAY)"
 	@echo "  VERSION:          $(VERSION)"
 	@echo "  ARTIFACT_TARGETS: $(ARTIFACT_TARGETS)"
 	@echo "  BUILD_DIR:        $(BUILD_DIR)"
 	@echo "  DIST_DIR:         $(DIST_DIR)"
-	@echo "  ANDROID_ICON_PATH: $(ANDROID_ICON_PATH)"
-	@echo "  ANDROID_NOTIFICATION_ICON_NAME: $(ANDROID_NOTIFICATION_ICON_NAME)"
+	@echo "  ANDROID_ICON_PATH: $(ANDROID_ICON_PATH_DISPLAY)"
+	@echo "  ANDROID_NOTIFICATION_ICON_NAME: $(ANDROID_NOTIFICATION_ICON_NAME_DISPLAY)"
 	@echo "  GOGIO_RUNNER:     $(GOGIO_RUNNER)"
+
+init:
+	@if [ -f go.mod ]; then \
+		echo "go.mod already exists."; \
+		echo "Current module path: $(MODULE_PATH_DISPLAY)"; \
+		echo "If you want to reinitialize it, remove or rename go.mod first."; \
+		exit 1; \
+	fi
+	@if [ -z "$(PROJECTNAME)" ]; then \
+		echo "Error: PROJECTNAME is not supplied."; \
+		echo "Usage: make init PROJECTNAME=<module_path>"; \
+		echo "Allowed characters: lowercase letters, digits, '.', '_', '-', and '/'."; \
+		echo "Examples:"; \
+		echo "  make init PROJECTNAME=weatherchecker"; \
+		echo "  make init PROJECTNAME=github.com/acme/weatherchecker"; \
+		echo "  make init PROJECTNAME=gitlab.com/team/weather-tool"; \
+		exit 1; \
+	fi
+	@if ! printf '%s\n' "$(PROJECTNAME)" | grep -Eq '$(PROJECTNAME_REGEX)'; then \
+		echo "Invalid PROJECTNAME: $(PROJECTNAME)"; \
+		echo "Allowed format: lowercase letters/digits plus '.', '_', '-' with optional '/' path segments."; \
+		echo "Examples:"; \
+		echo "  weatherchecker"; \
+		echo "  github.com/acme/weatherchecker"; \
+		echo "  gitlab.com/team/weather-tool"; \
+		exit 1; \
+	fi
+	@echo "Initializing Go project with module path '$(PROJECTNAME)'..."
+	@go mod init $(PROJECTNAME)
+	@go mod tidy
+	@echo "Project initialized successfully."
+	@echo "Derived APP_NAME: $$(basename "$(PROJECTNAME)")"
+
+ensure-module:
+	@if [ ! -f go.mod ]; then \
+		echo "go.mod was not found."; \
+		echo "Run: make init PROJECTNAME=github.com/acme/myapp"; \
+		echo "Allowed characters: lowercase letters, digits, '.', '_', '-', and '/'."; \
+		echo "Examples:"; \
+		echo "  make init PROJECTNAME=weatherchecker"; \
+		echo "  make init PROJECTNAME=github.com/acme/weatherchecker"; \
+		echo "  make init PROJECTNAME=gitlab.com/team/weather-tool"; \
+		exit 1; \
+	fi
+	@if [ -z "$(MODULE_PATH)" ] || [ -z "$(APP_NAME)" ]; then \
+		echo "go.mod exists but the module line could not be parsed."; \
+		echo "Expected a line like: module github.com/acme/myapp"; \
+		echo "Fix go.mod or reinitialize with: make init PROJECTNAME=github.com/acme/myapp"; \
+		exit 1; \
+	fi
 
 prepare:
 	@mkdir -p $(BUILD_DIR)/linux $(BUILD_DIR)/windows $(BUILD_DIR)/mac $(BUILD_DIR)/android $(DIST_DIR)
 
-deps:
+deps: ensure-module
 	@echo "Downloading Go modules..."
 	@go mod download
 	@go mod verify
 
-mod-tidy:
+mod-tidy: ensure-module
 	@echo "Running go mod tidy..."
 	@go mod tidy
 
@@ -169,7 +238,7 @@ fmt-check:
 		echo "Formatting check passed."; \
 	fi
 
-test:
+test: ensure-module
 	@if [ -z "$(strip $(TEST_FILES))" ]; then \
 		echo "No tests found, skipping."; \
 	else \
