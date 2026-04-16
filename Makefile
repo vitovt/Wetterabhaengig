@@ -1,13 +1,14 @@
 APP_NAME ?= wetterabhaengig
-APP_ID ?= com.vitovt.wetterabhaengig
-MAIN_PKG ?= ./cmd/wetterabhaengig
+APP_ID ?= com.vitovt.$(APP_NAME)
+MAIN_PKG ?= ./cmd/$(APP_NAME)
 
 BUILD_DIR ?= build
 DIST_DIR ?= dist
 
 GOGIO ?= gogio
 GOGIO_RUNNER ?= $(CURDIR)/scripts/gogio-android.sh
-ANDROID_ICON_PATH ?= cmd/wetterabhaengig/appicon.png
+ANDROID_ICON_PATH ?= cmd/$(APP_NAME)/appicon.png
+ANDROID_NOTIFICATION_ICON_NAME ?= ic_stat_$(APP_NAME)
 ANDROID_MIN_SDK ?= 30
 ANDROID_TARGET_SDK ?= 34
 ANDROID_HOME_FALLBACK := $(or $(ANDROID_HOME),$(ANDROID_SDK_ROOT),$(HOME)/Android/Sdk)
@@ -22,7 +23,7 @@ MAC_CGO_ENABLED ?= 1
 
 ARTIFACT_TARGETS ?= linux windows android
 
-PROJECT_TUNE_HINT ?= Update APP_NAME, MAIN_PKG, ARTIFACT_TARGETS and platform commands for each new project.
+PROJECT_TUNE_HINT ?= Update APP_NAME first; APP_ID, MAIN_PKG and ANDROID_ICON_PATH already derive from it unless your project layout differs.
 LINUX_HOST_DEPS_HINT ?= Add Linux host dependencies here if the project needs GUI or CGO system packages.
 WINDOWS_HOST_DEPS_HINT ?= Add cross-build toolchain notes here if the project cannot use plain GOOS=windows builds.
 ANDROID_HOST_DEPS_HINT ?= This repo uses Gio via scripts/gogio-android.sh; Fyne or other stacks will need a different Android runner and dependency notes.
@@ -79,17 +80,18 @@ RELEASE_ASSETS := $(ARTIFACT_FILES) $(CHECKSUM_FILE)
 help:
 	@echo "UNIVERSAL GO BUILD / TEST / PACKAGE / RELEASE ENTRYPOINT"
 	@echo "Drop this Makefile into a Go project, then tune only the small project-specific variables at the top."
-	@echo "Start by updating APP_NAME, MAIN_PKG, ARTIFACT_TARGETS, and any platform-specific build commands or hints."
+	@echo "Start by updating APP_NAME, then override APP_ID, MAIN_PKG, icon paths, targets, or platform commands only if that project differs."
 	@echo "Linux/Windows builds are expected to be common. Android support is optional and depends on the UI stack."
 	@echo "This repo uses Gio + gogio. A Fyne-based Android project will usually replace GOGIO_RUNNER and Android hints."
 	@echo ""
 	@echo "Project tuning checklist:"
 	@echo "  1. Set APP_NAME to the shipped binary name."
-	@echo "  2. Set MAIN_PKG to the package passed to go build."
-	@echo "  3. Set ARTIFACT_TARGETS to the platforms this repo actually releases."
-	@echo "  4. Review Linux/Windows/macOS CGO flags and platform commands for the current UI/toolchain."
-	@echo "  5. If Android exists, update APP_ID, ANDROID_ICON_PATH, ANDROID_* values, and the Android runner if the stack is not Gio."
-	@echo "  6. Replace the host dependency hints below with project-specific package/toolchain notes."
+	@echo "  2. Override APP_ID only if the Android application id should not be com.vitovt.<APP_NAME>."
+	@echo "  3. Override MAIN_PKG only if your main package is not ./cmd/<APP_NAME>."
+	@echo "  4. Set ARTIFACT_TARGETS to the platforms this repo actually releases."
+	@echo "  5. Review Linux/Windows/macOS CGO flags and platform commands for the current UI/toolchain."
+	@echo "  6. If Android exists, review ANDROID_ICON_PATH, ANDROID_NOTIFICATION_ICON_NAME, ANDROID_* values, and the Android runner if the stack is not Gio."
+	@echo "  7. Replace the host dependency hints below with project-specific package/toolchain notes."
 	@echo ""
 	@echo "Configured project hints:"
 	@echo "  Tune hint: $(PROJECT_TUNE_HINT)"
@@ -106,12 +108,14 @@ help:
 	@echo "  make fmt-check    - Fail if Go sources are not gofmt formatted."
 	@echo "  make test         - Run automated tests, or print a clear skip message if there are none."
 	@echo "  make check        - Run deps + fmt-check + test."
+	@echo "  make build        - Build the default desktop target (currently linux)."
 	@echo "  make linux        - Build Linux binary (currently amd64 only)."
 	@echo "  make windows      - Build Windows binary (currently amd64 only)."
 	@echo "  make mac          - Build macOS binary (currently amd64 only, macOS host expected)."
 	@echo "  make android      - Build Android APK with the configured Android runner."
 	@echo "  make artifacts    - Package versioned release artifacts into $(DIST_DIR)/<version>/."
 	@echo "  make snapshot     - Build versioned local artifacts without publishing a GitHub release."
+	@echo "  make release-check - Validate git/gh release prerequisites without publishing."
 	@echo "  make release      - Verify release context, package assets, and publish a GitHub release."
 	@echo "  make clean        - Remove build and dist artifacts."
 	@echo ""
@@ -128,6 +132,8 @@ help:
 	@echo "  ARTIFACT_TARGETS: $(ARTIFACT_TARGETS)"
 	@echo "  BUILD_DIR:        $(BUILD_DIR)"
 	@echo "  DIST_DIR:         $(DIST_DIR)"
+	@echo "  ANDROID_ICON_PATH: $(ANDROID_ICON_PATH)"
+	@echo "  ANDROID_NOTIFICATION_ICON_NAME: $(ANDROID_NOTIFICATION_ICON_NAME)"
 	@echo "  GOGIO_RUNNER:     $(GOGIO_RUNNER)"
 
 prepare:
@@ -207,7 +213,7 @@ android: check prepare
 	fi; \
 	export ANDROID_HOME; \
 	echo "Building Android APK with Gio runner..."; \
-	cd $(BUILD_DIR)/android && $(GOGIO_RUNNER) "$(GOGIO)" "$(ANDROID_MIN_SDK)" "$(ANDROID_TARGET_SDK)" "$(APP_ID)" "$(MAIN_PKG_ABS)" "$(APP_NAME).apk"
+	cd $(BUILD_DIR)/android && APP_NAME="$(APP_NAME)" ANDROID_NOTIFICATION_ICON_NAME="$(ANDROID_NOTIFICATION_ICON_NAME)" $(GOGIO_RUNNER) "$(GOGIO)" "$(ANDROID_MIN_SDK)" "$(ANDROID_TARGET_SDK)" "$(APP_ID)" "$(MAIN_PKG_ABS)" "$(APP_NAME).apk"
 
 $(LINUX_ARTIFACT): linux
 	@mkdir -p $(ARTIFACT_DIR)
@@ -250,8 +256,12 @@ snapshot: artifacts
 
 release-check:
 	@if [ -z "$(EXACT_TAG)" ]; then \
+		last_tag=$$(git describe --tags --abbrev=0 2>/dev/null || echo "<none>"); \
 		echo "Release requires an exact git tag on HEAD."; \
 		echo "Current derived version is $(VERSION). Use 'make snapshot' for untagged builds."; \
+		echo "Last git tag was: $$last_tag"; \
+		echo "Recent commits (git log --oneline -n 10):"; \
+		git log --oneline -n 10; \
 		exit 1; \
 	fi
 	@if [ -n "$$(git status --porcelain)" ]; then \
