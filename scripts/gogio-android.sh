@@ -14,6 +14,7 @@ go_pkg="$5"
 output_apk="$6"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
+notification_icon_name="${ANDROID_NOTIFICATION_ICON_NAME:-ic_stat_wetterabhaengig}"
 
 if ! command -v "$gogio_bin" >/dev/null 2>&1; then
 	echo "gogio binary not found: $gogio_bin" >&2
@@ -70,7 +71,7 @@ if [ ! -f "$manifest" ]; then
 fi
 
 notif_icon_dir="$workdir/res/drawable"
-notif_icon_file="$notif_icon_dir/ic_stat_wetterabhaengig.xml"
+notif_icon_file="$notif_icon_dir/${notification_icon_name}.xml"
 mkdir -p "$notif_icon_dir"
 cat >"$notif_icon_file" <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>
@@ -139,14 +140,16 @@ cp "$workdir/apk/classes.dex" "$repack_dir/classes.dex"
 
 "$zipalign_bin" -f 4 "$workdir/app.zip" "$output_apk"
 
-keystore_path="${WETTER_KEYSTORE_PATH:-$repo_root/.keys/android-debug.keystore}"
-keystore_alias="${WETTER_KEY_ALIAS:-android}"
-keystore_pass="${WETTER_KEY_PASS:-android}"
+keystore_path="${ANDROID_KEYSTORE_PATH:-${WETTER_KEYSTORE_PATH:-$repo_root/.keys/android-debug.keystore}}"
+keystore_alias="${ANDROID_KEY_ALIAS:-${WETTER_KEY_ALIAS:-android}}"
+keystore_pass="${ANDROID_KEY_PASS:-${WETTER_KEY_PASS:-android}}"
 
 echo "Android APK signing mode: development/debug keystore"
 echo "Keystore path: $keystore_path"
 echo "Keystore alias: $keystore_alias"
-echo "Reuse WETTER_KEYSTORE_PATH/WETTER_KEY_ALIAS/WETTER_KEY_PASS to keep signing with the same key."
+echo "Notification icon resource: $notification_icon_name"
+echo "Reuse ANDROID_KEYSTORE_PATH/ANDROID_KEY_ALIAS/ANDROID_KEY_PASS to keep signing with the same key."
+echo "Legacy WETTER_KEYSTORE_PATH/WETTER_KEY_ALIAS/WETTER_KEY_PASS overrides are still supported."
 echo "Point those variables to another keystore if you want a different development key."
 echo "For production releases, set those variables to your production keystore before running the final build."
 
